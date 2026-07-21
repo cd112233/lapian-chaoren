@@ -14,11 +14,13 @@ import json
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import uuid
 import webbrowser
+from collections import deque
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +37,7 @@ WORKBENCH_HTML = Path(__file__).with_name("workbench.html")
 DEFAULT_PROJECTS_ROOT = ROOT / "outputs" / "projects"
 ALLOWED_VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
 CHUNK_SIZE = 1024 * 1024
+BUSY_PROJECT_STATUSES = {"uploading", "queued", "analyzing", "building"}
 
 
 def utc_now() -> str:
@@ -114,6 +117,29 @@ class ProjectStore:
                 continue
         return sorted(projects, key=lambda item: item.get("created_at", ""), reverse=True)
 
+    def delete(self, project_id: str) -> dict[str, Any]:
+        with self._lock:
+            manifest = self.read(project_id)
+            root = self.project_root(project_id)
+            shutil.rmtree(root)
+        return manifest
+
+    def recover_interrupted(self) -> int:
+        recovered = 0
+        for manifest in self.list():
+            if manifest.get("status") not in BUSY_PROJECT_STATUSES:
+                continue
+            self.update(
+                manifest["project_id"],
+                status="failed",
+                stage="上次处理被中断",
+                progress_phase="interrupted",
+                progress_detail="原片副本仍保留，可删除后重新导入",
+                error="本地服务在分析完成前停止。",
+            )
+            recovered += 1
+        return recovered
+
 
 def write_upload(
     stream: BinaryIO,
@@ -142,6 +168,33 @@ def write_upload(
     return digest.hexdigest()
 
 
+def parse_progress_event(line: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(line)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("type") != "progress":
+        return None
+    try:
+        progress = max(0, min(100, int(payload["progress"])))
+    except (KeyError, TypeError, ValueError):
+        return None
+    stage = str(payload.get("stage") or "正在分析").strip()[:160]
+    detail = str(payload.get("detail") or "").strip()[:300]
+    phase = re.sub(r"[^a-z0-9_-]+", "", str(payload.get("phase") or "analysis").lower())[:48]
+    event: dict[str, Any] = {
+        "progress": progress,
+        "stage": stage,
+        "progress_detail": detail,
+        "progress_phase": phase or "analysis",
+    }
+    for key in ("current", "total"):
+        value = payload.get(key)
+        if isinstance(value, int) and value >= 0:
+            event[f"progress_{key}"] = value
+    return event
+
+
 def process_project(store: ProjectStore, project_id: str) -> None:
     manifest = store.read(project_id)
     project_root = store.project_root(project_id)
@@ -152,7 +205,11 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             project_id,
             status="analyzing",
             stage="正在检测切点、抽帧并生成逐镜片段",
-            progress=18,
+            progress=9,
+            progress_phase="preparing",
+            progress_detail="准备分析环境",
+            progress_current=None,
+            progress_total=None,
             error=None,
         )
         command = [
@@ -164,17 +221,38 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             "--detector",
             "adaptive",
             "--split-clips",
+            "--progress-json",
         ]
-        result = subprocess.run(command, text=True, capture_output=True, check=False)
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "analysis failed").strip()
+        output_tail: deque[str] = deque(maxlen=100)
+        process = subprocess.Popen(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            output_tail.append(line.rstrip())
+            event = parse_progress_event(line)
+            if event:
+                store.update(project_id, status="analyzing", **event)
+        return_code = process.wait()
+        if return_code != 0:
+            detail = "\n".join(output_tail).strip() or "analysis failed"
             raise RuntimeError(detail[-4000:])
 
         store.update(
             project_id,
             status="building",
             stage="正在建立人机学习记录和审片工作台",
-            progress=82,
+            progress=93,
+            progress_phase="learning",
+            progress_detail="正在生成可审核的字段结构",
+            progress_current=None,
+            progress_total=None,
         )
         learning_yaml = analysis_root / "learning_shots.yaml"
         build_learning_yaml(
@@ -185,8 +263,24 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             source_path=source_path,
             source_fingerprint=manifest["source_fingerprint"],
         )
+        store.update(
+            project_id,
+            status="building",
+            stage="正在生成审片工作台",
+            progress=97,
+            progress_phase="review_page",
+            progress_detail="正在组装逐镜证据与学习记录",
+        )
         review_path = analysis_root / "review.html"
         build_review_page(learning_yaml, review_path)
+        store.update(
+            project_id,
+            status="building",
+            stage="正在完成项目索引",
+            progress=99,
+            progress_phase="finalizing",
+            progress_detail="即将完成",
+        )
         metadata = json.loads((analysis_root / "metadata.json").read_text(encoding="utf-8"))
         probe = metadata.get("probe", {})
         detection = metadata.get("detection", {})
@@ -195,6 +289,10 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             status="ready",
             stage="可以开始人机审片",
             progress=100,
+            progress_phase="ready",
+            progress_detail=f"已生成 {int(detection.get('shot_count') or 0)} 个镜头",
+            progress_current=None,
+            progress_total=None,
             shot_count=int(detection.get("shot_count") or 0),
             duration_sec=float(probe.get("duration_sec") or 0),
             fps=float(probe.get("fps") or 0),
@@ -207,7 +305,8 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             project_id,
             status="failed",
             stage="处理失败",
-            progress=0,
+            progress_phase="failed",
+            progress_detail="分析未完成，请查看错误信息",
             error=str(error)[:4000],
         )
 
@@ -216,6 +315,30 @@ class WorkbenchHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     store: ProjectStore
     max_upload_bytes: int
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._active_lock = threading.RLock()
+        self._active_projects: set[str] = set()
+
+    def mark_project_active(self, project_id: str) -> None:
+        with self._active_lock:
+            self._active_projects.add(project_id)
+
+    def mark_project_inactive(self, project_id: str) -> None:
+        with self._active_lock:
+            self._active_projects.discard(project_id)
+
+    def project_is_active(self, project_id: str) -> bool:
+        with self._active_lock:
+            return project_id in self._active_projects
+
+
+def run_project_worker(server: WorkbenchHTTPServer, project_id: str) -> None:
+    try:
+        process_project(server.store, project_id)
+    finally:
+        server.mark_project_inactive(project_id)
 
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
@@ -381,12 +504,17 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             "status": "uploading",
             "stage": "正在保存本地片源",
             "progress": 0,
+            "progress_phase": "uploading",
+            "progress_detail": "正在接收本地片源",
+            "progress_current": None,
+            "progress_total": None,
             "workflow_version": WORKFLOW_VERSION,
             "created_at": created_at,
             "updated_at": created_at,
             "error": None,
         }
         self.server.store.write(project_id, manifest)
+        self.server.mark_project_active(project_id)
         try:
             fingerprint = write_upload(self.rfile, source_path, content_length)
             manifest = self.server.store.update(
@@ -395,8 +523,11 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 status="queued",
                 stage="已进入本地分析队列",
                 progress=8,
+                progress_phase="queued",
+                progress_detail="等待分析线程启动",
             )
         except Exception as error:
+            self.server.mark_project_inactive(project_id)
             self.server.store.update(
                 project_id,
                 status="failed",
@@ -408,13 +539,44 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             return
 
         worker = threading.Thread(
-            target=process_project,
-            args=(self.server.store, project_id),
+            target=run_project_worker,
+            args=(self.server, project_id),
             daemon=True,
             name=f"lapian-{project_id}",
         )
         worker.start()
         self._send_json(HTTPStatus.ACCEPTED, {"project": manifest})
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        match = re.fullmatch(r"/api/projects/([^/]+)", path)
+        if not match:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        project_id = match.group(1)
+        if self.server.project_is_active(project_id):
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {"error": "项目仍在上传或分析，完成后才能删除。"},
+            )
+            return
+        try:
+            manifest = self.server.store.delete(project_id)
+        except (ValueError, FileNotFoundError):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "project not found"})
+            return
+        except OSError as error:
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)[:1000]})
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "deleted": {
+                    "project_id": manifest.get("project_id", project_id),
+                    "title": manifest.get("title", ""),
+                }
+            },
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -445,10 +607,13 @@ def serve(
 ) -> None:
     server = WorkbenchHTTPServer((host, port), WorkbenchHandler)
     server.store = ProjectStore(projects_root)
+    recovered = server.store.recover_interrupted()
     server.max_upload_bytes = max_upload_bytes
     url = f"http://{host}:{server.server_address[1]}"
     print(f"Lapian local workbench: {url}")
     print(f"Projects root: {server.store.root}")
+    if recovered:
+        print(f"Recovered interrupted projects: {recovered}")
     if open_browser:
         threading.Timer(0.35, lambda: webbrowser.open(url)).start()
     try:

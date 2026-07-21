@@ -2,7 +2,7 @@ schema_version: '1.0'
 project:
   project_id: demo-learning-loop
   title: 人机学习闭环示例
-  workflow_version: '0.2.0'
+  workflow_version: '0.2.1'
   shot_count: 2
 shots:
 - shot_id: SH001

@@ -13,7 +13,7 @@
 }
 *{box-sizing:border-box}
 html{min-height:100%;background:var(--paper)}
-body{min-width:320px;min-height:100%;margin:0;background:var(--paper);color:var(--ink);font:14px/1.65 Inter,"SF Pro Text","PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{min-width:0;min-height:100%;margin:0;background:var(--paper);color:var(--ink);font:14px/1.65 Inter,"SF Pro Text","PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button,input{font:inherit}
 button{cursor:pointer}
 button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid #377b69;outline-offset:2px}
@@ -53,23 +53,25 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .primary{height:39px;padding:0 15px;border:1px solid var(--primary);border-radius:5px;background:var(--primary);color:#fff;font-weight:800}
 .primary:hover{background:#214c40}.primary:disabled{cursor:not-allowed;opacity:.45}
 .format-note{color:var(--faint);font-size:10px}
-.upload-progress{display:none;margin-top:14px;padding:11px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.upload-progress{display:none;margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 .upload-progress.visible{display:block}
-.progress-head{display:flex;gap:10px;color:var(--muted);font-size:11px}.progress-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}.progress-head span{margin-left:auto;font-variant-numeric:tabular-nums}
-.bar{height:5px;margin-top:8px;overflow:hidden;border-radius:4px;background:#dce3df}.bar i{display:block;width:0;height:100%;background:var(--success)}
+.progress-head{display:flex;gap:10px;color:var(--muted);font-size:11px}.progress-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}.progress-head span{margin-left:auto;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:800}
+.progress-stage{margin-top:6px;color:#3e4944;font-size:11px;font-weight:750}.progress-detail{min-height:17px;margin-top:3px;color:var(--faint);font-size:10px}
+.bar{height:6px;margin-top:9px;overflow:hidden;border-radius:4px;background:#dce3df}.bar i{display:block;width:0;height:100%;background:var(--success);transition:width .2s cubic-bezier(.22,1,.36,1)}
 .upload-error{display:none;margin-top:10px;padding:9px;border:1px solid #ddb9b0;border-radius:5px;background:#fff4f1;color:#85382f;font-size:11px;line-height:1.55}.upload-error.visible{display:block}
 .library{min-width:0}
 .library-head{display:flex;align-items:center;margin-bottom:10px}.library-head h2{margin:0;font-size:15px}.refresh{margin-left:auto;height:30px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:#4d5953;font-size:11px}
 .project-list{border-top:1px solid var(--line)}
-.project-row{display:grid;grid-template-columns:minmax(0,1fr) 140px 96px;gap:15px;align-items:center;min-height:92px;padding:13px 4px;border-bottom:1px solid var(--line)}
+.project-row{display:grid;grid-template-columns:minmax(0,1fr) 158px 116px;gap:15px;align-items:center;min-height:98px;padding:13px 4px;border-bottom:1px solid var(--line)}
 .project-main{min-width:0}.project-main h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;font-size:14px}.project-main p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:4px 0 0;color:var(--muted);font-size:11px}.project-main code{color:#64706a;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
-.status-block{min-width:0}.status-line{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}.status-line i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#9da7a2}.status-ready i{background:var(--success)}.status-failed i{background:var(--danger)}.status-analyzing i,.status-building i,.status-queued i{background:var(--warning)}
-.status-stage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--faint);font-size:10px}.mini-bar{height:4px;margin-top:7px;overflow:hidden;border-radius:4px;background:#dce2df}.mini-bar i{display:block;height:100%;background:#bd7341}
-.open-link{height:34px;display:inline-grid;place-items:center;border:1px solid var(--primary);border-radius:5px;background:var(--primary);color:#fff;text-decoration:none;font-size:11px;font-weight:800}.open-link[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}
+.status-block{min-width:0}.status-line{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}.status-line i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#9da7a2}.status-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-line strong{margin-left:auto;color:#4d5853;font-variant-numeric:tabular-nums}.status-ready i{background:var(--success)}.status-failed i{background:var(--danger)}.status-analyzing i,.status-building i,.status-queued i,.status-uploading i{background:var(--warning)}
+.status-stage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--faint);font-size:10px}.mini-bar{height:4px;margin-top:7px;overflow:hidden;border-radius:4px;background:#dce2df}.mini-bar i{display:block;height:100%;background:#bd7341;transition:width .2s cubic-bezier(.22,1,.36,1)}.status-ready+.status-stage~.mini-bar i{background:var(--success)}
+.project-actions{display:grid;grid-template-columns:1fr;gap:6px}.open-link,.delete-project{height:32px;display:inline-grid;place-items:center;border-radius:5px;font-size:11px;font-weight:800}.open-link{border:1px solid var(--primary);background:var(--primary);color:#fff;text-decoration:none}.open-link[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}.delete-project{border:1px solid #d3bbb5;background:transparent;color:#8f4036}.delete-project:hover:not(:disabled){border-color:var(--danger);background:#fff4f1}.delete-project:disabled{cursor:not-allowed;border-color:var(--line);color:#929b97;opacity:.65}
 .empty{padding:58px 14px;border-bottom:1px solid var(--line);color:var(--muted);text-align:center}.empty b{display:block;color:#39453f;font-size:13px}.empty span{display:block;margin-top:4px;font-size:11px}
 .error-detail{margin-top:6px;color:var(--danger)!important;white-space:normal!important;line-height:1.45}
-@media(max-width:820px){.shell{width:min(100% - 24px,680px);padding-top:20px}.layout{grid-template-columns:1fr;gap:25px}.ingest{position:static}.page-head p{display:none}.project-row{grid-template-columns:minmax(0,1fr) 88px}.status-block{grid-column:1}.open-link{grid-column:2;grid-row:1/3}.section-name{display:none}}
-@media(max-width:520px){.topbar{padding:0 12px}.health{display:none}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 76px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}}
+.delete-dialog{width:min(430px,calc(100vw - 28px));padding:0;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink)}.delete-dialog::backdrop{background:rgba(12,16,14,.42)}.dialog-head{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.dialog-head h2{margin:0;font-size:15px}.dialog-close{margin-left:auto;width:30px;height:30px;border:0;background:transparent;color:var(--muted);font-size:18px}.dialog-body{padding:15px 16px}.dialog-body p{margin:0;color:var(--muted);font-size:12px;line-height:1.7}.delete-target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:11px 0;padding:8px 9px;border-radius:5px;background:var(--rail);font-weight:800}.dialog-warning{color:#7e3a32!important}.dialog-error{margin-top:9px!important;color:var(--danger)!important}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}.secondary,.danger-action{height:34px;padding:0 12px;border-radius:5px;font-weight:750}.secondary{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink)}.danger-action{border:1px solid var(--danger);background:var(--danger);color:#fff}.danger-action:disabled{cursor:wait;opacity:.55}.toast{position:fixed;right:18px;bottom:16px;z-index:50;padding:9px 12px;border-radius:5px;background:#17221d;color:#fff;font-size:11px;opacity:0;transform:translateY(6px);pointer-events:none;transition:opacity .16s ease,transform .16s ease}.toast.visible{opacity:1;transform:none}
+@media(max-width:820px){.shell{width:min(100% - 24px,680px);padding-top:20px}.layout{grid-template-columns:1fr;gap:25px}.ingest{position:static}.page-head p{display:none}.project-row{grid-template-columns:minmax(0,1fr) 112px}.status-block{grid-column:1}.project-actions{grid-column:2;grid-row:1/3}.section-name{display:none}}
+@media(max-width:520px){.topbar{padding:0 12px}.health{display:none}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 88px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}.toast{right:9px;bottom:9px;left:9px;text-align:center}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -77,7 +79,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 <header class="topbar">
   <div class="brand"><span class="brand-mark">帧</span>拉片超人</div>
   <div class="section-name">片库与导入</div>
-  <div class="version">v0.2.0</div>
+  <div class="version">v0.2.1</div>
   <div class="health"><i></i>本机运行</div>
 </header>
 <main class="shell">
@@ -99,7 +101,12 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
       </div>
       <div class="project-name"><label for="projectTitle">项目名称</label><input id="projectTitle" maxlength="120" placeholder="选择片源后自动填写"></div>
       <div class="submit-row"><button class="primary" id="startUpload" disabled>开始分析</button><span class="format-note">原片不会上传到外部服务</span></div>
-      <div class="upload-progress" id="uploadProgress" aria-live="polite"><div class="progress-head"><b id="uploadName"></b><span id="uploadPercent">0%</span></div><div class="bar"><i id="uploadBar"></i></div></div>
+      <div class="upload-progress" id="uploadProgress" aria-live="polite">
+        <div class="progress-head"><b id="uploadName"></b><span id="uploadPercent">0%</span></div>
+        <div class="progress-stage" id="uploadStage">等待开始</div>
+        <div class="bar" id="uploadProgressBar" role="progressbar" aria-label="项目处理进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="uploadBar"></i></div>
+        <div class="progress-detail" id="uploadDetail"></div>
+      </div>
       <div class="upload-error" id="uploadError" role="alert"></div>
     </section>
     <section class="library" aria-labelledby="libraryTitle">
@@ -108,6 +115,17 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     </section>
   </div>
 </main>
+<dialog class="delete-dialog" id="deleteDialog" aria-labelledby="deleteDialogTitle">
+  <div class="dialog-head"><h2 id="deleteDialogTitle">删除本地项目</h2><button class="dialog-close" id="closeDeleteDialog" type="button" aria-label="关闭">×</button></div>
+  <div class="dialog-body">
+    <p>将永久删除这个项目的原片副本、镜头切片、帧图、学习记录和审片页。</p>
+    <div class="delete-target" id="deleteTarget"></div>
+    <p class="dialog-warning">此操作无法撤销，不会影响电脑中原始文件所在的位置。</p>
+    <p class="dialog-error" id="deleteError" role="alert" hidden></p>
+  </div>
+  <div class="dialog-actions"><button class="secondary" id="cancelDelete" type="button">取消</button><button class="danger-action" id="confirmDelete" type="button">确认删除</button></div>
+</dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (() => {
   'use strict'
@@ -116,6 +134,10 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   const allowed = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'])
   let selectedFile = null
   let polling = null
+  let activeProjectId = null
+  let projectsCache = []
+  let deleteProjectId = null
+  let toastTimer = null
 
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -166,19 +188,54 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     $('#uploadError').classList.add('visible')
   }
 
+  function toast(message) {
+    const element = $('#toast')
+    element.textContent = message
+    element.classList.add('visible')
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => element.classList.remove('visible'), 2400)
+  }
+
+  function updateMonitor({ title, progress, stage, detail = '' }) {
+    const value = Math.max(0, Math.min(100, Number(progress || 0)))
+    $('#uploadProgress').classList.add('visible')
+    $('#uploadName').textContent = title || '本地项目'
+    $('#uploadPercent').textContent = `${Math.round(value)}%`
+    $('#uploadStage').textContent = stage || '正在处理'
+    $('#uploadDetail').textContent = detail
+    $('#uploadBar').style.width = `${value}%`
+    $('#uploadProgressBar').setAttribute('aria-valuenow', String(Math.round(value)))
+  }
+
+  function monitorProject(project) {
+    if (!project) return
+    const count = Number(project.progress_total || 0)
+    const current = Number(project.progress_current || 0)
+    const shotPhase = ['detected', 'evidence', 'clips'].includes(project.progress_phase)
+    const countText = count > 0 && shotPhase ? `第 ${Math.min(current, count)} / ${count} 镜` : ''
+    const detail = [countText, project.progress_detail || ''].filter(Boolean).join(' · ')
+    updateMonitor({ title: project.title, progress: project.progress, stage: project.stage, detail })
+  }
+
   function statusLabel(status) {
     return ({ uploading: '上传中', queued: '等待处理', analyzing: '机械分析', building: '建立工作台', ready: '可以审片', failed: '处理失败' })[status] || '等待处理'
   }
 
   function projectRow(project) {
     const ready = project.status === 'ready'
+    const busy = !['ready', 'failed'].includes(project.status)
+    const progress = Math.max(0, Math.min(100, Number(project.progress || 0)))
     const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
     const error = project.error ? `<p class="error-detail">${escapeHTML(project.error.slice(0, 240))}</p>` : ''
     const href = ready ? `/projects/${encodeURIComponent(project.project_id)}/${project.review_relpath}` : '#'
+    const count = Number(project.progress_total || 0)
+    const current = Number(project.progress_current || 0)
+    const unit = project.progress_phase === 'detecting' ? '帧' : '镜'
+    const detail = count > 0 ? `${project.stage || ''} · ${Math.min(current, count)} / ${count} ${unit}` : (project.stage || '')
     return `<article class="project-row">
       <div class="project-main"><h3>${escapeHTML(project.title)}</h3><p>${escapeHTML(meta)}</p><code>${escapeHTML(project.project_id)}</code>${error}</div>
-      <div class="status-block"><div class="status-line status-${escapeHTML(project.status)}"><i></i>${escapeHTML(statusLabel(project.status))}</div><div class="status-stage">${escapeHTML(project.stage || '')}</div><div class="mini-bar"><i style="width:${Math.max(0, Math.min(100, Number(project.progress || 0)))}%"></i></div></div>
-      <a class="open-link" href="${href}" ${ready ? '' : 'aria-disabled="true"'}>进入审片</a>
+      <div class="status-block"><div class="status-line status-${escapeHTML(project.status)}"><i></i><span>${escapeHTML(statusLabel(project.status))}</span><strong>${Math.round(progress)}%</strong></div><div class="status-stage" title="${escapeHTML(project.progress_detail || detail)}">${escapeHTML(detail)}</div><div class="mini-bar" role="progressbar" aria-label="${escapeHTML(project.title)}处理进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><i style="width:${progress}%"></i></div></div>
+      <div class="project-actions"><a class="open-link" href="${href}" ${ready ? '' : 'aria-disabled="true"'}>进入审片</a><button class="delete-project" type="button" data-project-id="${escapeHTML(project.project_id)}" ${busy ? 'disabled title="分析完成后可删除"' : ''}>删除</button></div>
     </article>`
   }
 
@@ -188,11 +245,16 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
       const projects = Array.isArray(data.projects) ? data.projects : []
+      projectsCache = projects
       $('#projectCount').textContent = projects.length
       $('#projectList').innerHTML = projects.length ? projects.map(projectRow).join('') : '<div class="empty"><b>片库还是空的</b><span>导入第一段参考视频后，处理进度会显示在这里。</span></div>'
-      const busy = projects.some((project) => !['ready', 'failed'].includes(project.status))
-      if (busy && !polling) polling = setInterval(loadProjects, 2200)
-      if (!busy && polling) { clearInterval(polling); polling = null }
+      const busyProjects = projects.filter((project) => !['ready', 'failed'].includes(project.status))
+      const activeProject = projects.find((project) => project.project_id === activeProjectId)
+      if (activeProject) monitorProject(activeProject)
+      else if (busyProjects.length) { activeProjectId = busyProjects[0].project_id; monitorProject(busyProjects[0]) }
+      else if (activeProjectId) { activeProjectId = null; $('#uploadProgress').classList.remove('visible') }
+      if (busyProjects.length && !polling) polling = setInterval(loadProjects, 900)
+      if (!busyProjects.length && polling) { clearInterval(polling); polling = null }
     } catch (error) {
       $('#projectList').innerHTML = `<div class="empty"><b>无法读取本地片库</b><span>${escapeHTML(error.message || '连接失败')}</span></div>`
     }
@@ -200,38 +262,73 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 
   function uploadSelected() {
     if (!selectedFile) return
+    const uploadFile = selectedFile
+    const projectTitle = $('#projectTitle').value.trim() || uploadFile.name.replace(/\.[^.]+$/, '')
     $('#uploadError').classList.remove('visible')
     $('#startUpload').disabled = true
-    $('#uploadProgress').classList.add('visible')
-    $('#uploadName').textContent = selectedFile.name
-    $('#uploadPercent').textContent = '0%'
-    $('#uploadBar').style.width = '0%'
+    updateMonitor({ title: projectTitle, progress: 0, stage: '正在保存本地片源', detail: '等待传输开始' })
     const request = new XMLHttpRequest()
     request.open('POST', '/api/projects')
-    request.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream')
-    request.setRequestHeader('X-Filename', encodeURIComponent(selectedFile.name))
-    request.setRequestHeader('X-Project-Title', encodeURIComponent($('#projectTitle').value.trim()))
+    request.setRequestHeader('Content-Type', uploadFile.type || 'application/octet-stream')
+    request.setRequestHeader('X-Filename', encodeURIComponent(uploadFile.name))
+    request.setRequestHeader('X-Project-Title', encodeURIComponent(projectTitle))
     request.upload.addEventListener('progress', (event) => {
       if (!event.lengthComputable) return
       const percent = Math.round(event.loaded / event.total * 100)
-      $('#uploadPercent').textContent = `${percent}%`
-      $('#uploadBar').style.width = `${percent}%`
+      updateMonitor({ title: projectTitle, progress: Math.max(1, Math.round(percent * 0.08)), stage: '正在保存本地片源', detail: `片源传输 ${percent}%` })
     })
     request.addEventListener('load', () => {
       let data = {}
       try { data = JSON.parse(request.responseText || '{}') } catch {}
       if (request.status < 200 || request.status >= 300) {
         showError(data.error || `导入失败：HTTP ${request.status}`)
+        updateMonitor({ title: projectTitle, progress: 0, stage: '导入失败', detail: data.error || `HTTP ${request.status}` })
         $('#startUpload').disabled = false
         return
       }
-      $('#uploadPercent').textContent = '已进入分析队列'
-      $('#uploadBar').style.width = '100%'
+      activeProjectId = data.project?.project_id || null
+      if (data.project) monitorProject(data.project)
       clearFile()
       loadProjects()
     })
-    request.addEventListener('error', () => { showError('本地连接中断，片源没有完成导入。'); $('#startUpload').disabled = false })
-    request.send(selectedFile)
+    request.addEventListener('error', () => { showError('本地连接中断，片源没有完成导入。'); updateMonitor({ title: projectTitle, progress: 0, stage: '导入失败', detail: '本地连接中断' }); $('#startUpload').disabled = false })
+    request.send(uploadFile)
+  }
+
+  function openDeleteDialog(projectId) {
+    const project = projectsCache.find((item) => item.project_id === projectId)
+    if (!project || !['ready', 'failed'].includes(project.status)) return
+    deleteProjectId = projectId
+    $('#deleteTarget').textContent = project.title
+    $('#deleteError').hidden = true
+    $('#deleteError').textContent = ''
+    $('#confirmDelete').disabled = false
+    $('#confirmDelete').textContent = '确认删除'
+    $('#deleteDialog').showModal()
+  }
+
+  async function deleteProject() {
+    if (!deleteProjectId) return
+    const project = projectsCache.find((item) => item.project_id === deleteProjectId)
+    const button = $('#confirmDelete')
+    button.disabled = true
+    button.textContent = '正在删除'
+    $('#deleteError').hidden = true
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(deleteProjectId)}`, { method: 'DELETE' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `删除失败：HTTP ${response.status}`)
+      if (activeProjectId === deleteProjectId) activeProjectId = null
+      $('#deleteDialog').close()
+      toast(`已删除“${project?.title || '本地项目'}”`)
+      deleteProjectId = null
+      await loadProjects()
+    } catch (error) {
+      $('#deleteError').textContent = error.message || '删除失败'
+      $('#deleteError').hidden = false
+      button.disabled = false
+      button.textContent = '确认删除'
+    }
   }
 
   const dropzone = $('#dropzone')
@@ -241,6 +338,14 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   $('#clearFile').addEventListener('click', clearFile)
   $('#startUpload').addEventListener('click', uploadSelected)
   $('#refreshProjects').addEventListener('click', loadProjects)
+  $('#projectList').addEventListener('click', (event) => {
+    const button = event.target.closest('.delete-project')
+    if (button && !button.disabled) openDeleteDialog(button.dataset.projectId)
+  })
+  $('#closeDeleteDialog').addEventListener('click', () => $('#deleteDialog').close())
+  $('#cancelDelete').addEventListener('click', () => $('#deleteDialog').close())
+  $('#confirmDelete').addEventListener('click', deleteProject)
+  $('#deleteDialog').addEventListener('close', () => { if (!$('#confirmDelete').disabled) deleteProjectId = null })
   for (const name of ['dragenter', 'dragover']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.add('dragging') })
   for (const name of ['dragleave', 'drop']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.remove('dragging') })
   dropzone.addEventListener('drop', (event) => setFile(event.dataTransfer?.files?.[0]))

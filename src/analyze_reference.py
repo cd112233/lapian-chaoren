@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 import yaml
 
 try:
-    from scenedetect import SceneManager, open_video
+    from scenedetect import SceneDetector, SceneManager, open_video
     from scenedetect.detectors import AdaptiveDetector, ContentDetector
 except ImportError as exc:  # pragma: no cover - user-facing dependency gate
     raise SystemExit(
@@ -130,6 +130,83 @@ class CommandError(RuntimeError):
     pass
 
 
+class ProgressEmitter:
+    def __init__(self, enabled: bool = False) -> None:
+        self.enabled = enabled
+        self._last_event: tuple[Any, ...] | None = None
+
+    def emit(
+        self,
+        progress: float,
+        stage: str,
+        *,
+        phase: str,
+        detail: str = "",
+        current: int | None = None,
+        total: int | None = None,
+        force: bool = False,
+    ) -> None:
+        if not self.enabled:
+            return
+        normalized = max(0, min(100, int(round(progress))))
+        signature = (normalized, stage, detail, current, total, phase)
+        if not force and signature == self._last_event:
+            return
+        payload: dict[str, Any] = {
+            "type": "progress",
+            "phase": phase,
+            "progress": normalized,
+            "stage": stage,
+            "detail": detail,
+        }
+        if current is not None:
+            payload["current"] = current
+        if total is not None:
+            payload["total"] = total
+        print(json.dumps(payload, ensure_ascii=False), flush=True)
+        self._last_event = signature
+
+
+class FrameProgressDetector(SceneDetector):
+    """Reports decoded-frame progress without changing scene detection results."""
+
+    def __init__(
+        self,
+        emitter: ProgressEmitter,
+        *,
+        total_frames: int,
+        fps: float,
+        progress_start: int = 14,
+        progress_end: int = 34,
+    ) -> None:
+        super().__init__()
+        self.emitter = emitter
+        self.total_frames = max(1, total_frames)
+        self.fps = max(0.001, fps)
+        self.progress_start = progress_start
+        self.progress_end = progress_end
+        self.report_every = max(1, self.total_frames // 50)
+        self.last_reported_frame = -self.report_every
+
+    def process_frame(self, timecode: Any, frame_img: Any) -> list[Any]:
+        current = min(self.total_frames, int(timecode.frame_num) + 1)
+        if current - self.last_reported_frame >= self.report_every or current >= self.total_frames:
+            ratio = current / self.total_frames
+            progress = self.progress_start + (self.progress_end - self.progress_start) * ratio
+            elapsed = current / self.fps
+            duration = self.total_frames / self.fps
+            self.emitter.emit(
+                progress,
+                "正在检测镜头切点",
+                phase="detecting",
+                detail=f"已扫描 {elapsed:.1f} / {duration:.1f} 秒",
+                current=current,
+                total=self.total_frames,
+            )
+            self.last_reported_frame = current
+        return []
+
+
 def run(cmd: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         cmd,
@@ -210,6 +287,7 @@ def detect_shots(
     detector_name: str,
     threshold: float | None,
     min_scene_len: int,
+    progress: ProgressEmitter | None = None,
 ) -> list[Shot]:
     video = open_video(str(path))
     manager = SceneManager()
@@ -224,7 +302,15 @@ def detect_shots(
             kwargs["threshold"] = threshold
         detector = ContentDetector(**kwargs)
     manager.add_detector(detector)
-    manager.detect_scenes(video, show_progress=True)
+    if progress and progress.enabled:
+        manager.add_detector(
+            FrameProgressDetector(
+                progress,
+                total_frames=probe.frame_count,
+                fps=probe.fps,
+            )
+        )
+    manager.detect_scenes(video, show_progress=not bool(progress and progress.enabled))
     scene_list = manager.get_scene_list(start_in_scene=True)
 
     if not scene_list:
@@ -613,11 +699,18 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--frame-width", type=int, default=960, help="Extracted review frame width")
     parser.add_argument("--split-clips", action="store_true", help="Re-encode exact review clip for each shot")
     parser.add_argument("--overwrite", action="store_true", help="Allow writing into a non-empty output directory")
+    parser.add_argument(
+        "--progress-json",
+        action="store_true",
+        help="Emit newline-delimited JSON progress events for the local workbench",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
+    progress = ProgressEmitter(args.progress_json)
+    progress.emit(9, "正在检查分析环境", phase="preparing", force=True)
     require_binary("ffmpeg")
     require_binary("ffprobe")
     video_path = args.video.expanduser().resolve()
@@ -628,16 +721,33 @@ def main(argv: Iterable[str] | None = None) -> int:
         raise SystemExit(f"Output directory is not empty: {output_root}\nUse --overwrite or choose another path.")
     output_root.mkdir(parents=True, exist_ok=True)
 
+    progress.emit(10, "正在读取视频信息", phase="probing")
     probe = probe_video(video_path)
+    progress.emit(
+        12,
+        "已读取视频信息",
+        phase="probing",
+        detail=f"{probe.duration_sec:.1f} 秒 · {probe.width}x{probe.height} · {probe.fps:.2f} fps",
+    )
+    progress.emit(13, "正在检测镜头切点", phase="detecting", detail="准备逐帧扫描")
     shots = detect_shots(
         video_path,
         probe,
         detector_name=args.detector,
         threshold=args.threshold,
         min_scene_len=args.min_scene_len,
+        progress=progress,
     )
     if not shots:
         raise SystemExit("No valid shots were detected.")
+    progress.emit(
+        35,
+        "镜头切点检测完成",
+        phase="detected",
+        detail=f"识别到 {len(shots)} 个候选镜头",
+        current=len(shots),
+        total=len(shots),
+    )
 
     metadata = {
         "tool": "fight-reference-breakdown-kit",
@@ -657,7 +767,17 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     rows: list[dict[str, Any]] = []
     middle_frames: list[Path] = []
-    for shot in shots:
+    shot_count = len(shots)
+    for shot_index, shot in enumerate(shots, start=1):
+        shot_start_progress = 38 + ((shot_index - 1) / shot_count) * 47
+        progress.emit(
+            shot_start_progress,
+            "正在生成逐镜证据",
+            phase="evidence",
+            detail=f"{shot.shot_id} · 抽取首帧、中间帧和尾帧",
+            current=shot_index,
+            total=shot_count,
+        )
         shot_dir = output_root / "shots" / shot.shot_id
         frame_paths = [shot_dir / "start.jpg", shot_dir / "middle.jpg", shot_dir / "end.jpg"]
         for timestamp, frame_path in zip(safe_sample_times(shot), frame_paths):
@@ -667,16 +787,36 @@ def main(argv: Iterable[str] | None = None) -> int:
 
         clip_exists = False
         if args.split_clips:
+            progress.emit(
+                shot_start_progress + (47 / shot_count) * 0.6,
+                "正在生成逐镜片段",
+                phase="clips",
+                detail=f"{shot.shot_id} · 编码审片视频",
+                current=shot_index,
+                total=shot_count,
+            )
             clip_path = output_root / "clips" / f"{shot.shot_id}.mp4"
             split_clip(video_path, shot, clip_path)
             clip_exists = True
         rows.append(csv_row(shot, output_root, clip_exists))
+        progress.emit(
+            38 + (shot_index / shot_count) * 47,
+            "正在生成逐镜证据",
+            phase="evidence",
+            detail=f"已完成 {shot_index} / {shot_count} 镜",
+            current=shot_index,
+            total=shot_count,
+        )
 
+    progress.emit(87, "正在生成镜头总览", phase="overview", detail=f"汇总 {shot_count} 个镜头")
     make_overview_contact_sheet(shots, middle_frames, output_root / "overview_contact_sheet.jpg")
+    progress.emit(89, "正在写入分析清单", phase="manifests")
     write_csv(rows, output_root / "shots.csv")
     write_yaml(shots, output_root, output_root / "shot_manifest.yaml")
     write_report(shots, output_root, output_root / "report.md")
+    progress.emit(90, "正在生成时间线", phase="timeline")
     otio_written = write_otio(video_path, probe, shots, output_root / "reference_timeline.otio")
+    progress.emit(91, "机械分析完成", phase="analysis_complete", detail=f"共 {shot_count} 镜")
 
     print(f"Reference: {video_path}")
     print(f"Duration: {probe.duration_sec:.3f}s @ {probe.fps:.3f} fps")

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 from io import BytesIO
 from pathlib import Path
@@ -46,6 +47,11 @@ class WorkbenchServerTests(unittest.TestCase):
             script.write_text(scripts[0], encoding="utf-8")
             result = subprocess.run(["node", "--check", str(script)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('id="uploadProgressBar"', document)
+        self.assertIn('id="deleteDialog"', document)
+        self.assertIn("method: 'DELETE'", document)
+        self.assertIn("project.progress_current", document)
+        self.assertIn("project.progress_phase === 'detecting'", document)
 
     def test_streamed_upload_hashes_and_moves_atomically(self) -> None:
         module = load_module()
@@ -55,6 +61,110 @@ class WorkbenchServerTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"abcdef")
             self.assertEqual(len(fingerprint), 64)
             self.assertFalse(target.with_suffix(".mp4.uploading").exists())
+
+    def test_progress_event_parser_accepts_only_structured_updates(self) -> None:
+        module = load_module()
+        event = module.parse_progress_event(
+            json.dumps(
+                {
+                    "type": "progress",
+                    "phase": "evidence",
+                    "progress": 63,
+                    "stage": "正在生成逐镜证据",
+                    "detail": "SH012",
+                    "current": 12,
+                    "total": 77,
+                    "ignored": "not persisted",
+                },
+                ensure_ascii=False,
+            )
+        )
+        self.assertEqual(
+            event,
+            {
+                "progress": 63,
+                "stage": "正在生成逐镜证据",
+                "progress_detail": "SH012",
+                "progress_phase": "evidence",
+                "progress_current": 12,
+                "progress_total": 77,
+            },
+        )
+        self.assertIsNone(module.parse_progress_event("not json"))
+        self.assertIsNone(module.parse_progress_event('{"type":"log","progress":20}'))
+        self.assertIsNone(module.parse_progress_event('{"type":"progress","progress":"bad"}'))
+
+    def test_project_store_delete_is_confined_to_project_root(self) -> None:
+        module = load_module()
+        project_id = "20260721-120000-abcdef12"
+        with tempfile.TemporaryDirectory() as directory:
+            store = module.ProjectStore(Path(directory))
+            store.write(project_id, {"project_id": project_id, "title": "Delete Test", "status": "ready"})
+            evidence = store.project_root(project_id) / "analysis" / "review.html"
+            evidence.parent.mkdir(parents=True)
+            evidence.write_text("review", encoding="utf-8")
+            deleted = store.delete(project_id)
+            self.assertEqual(deleted["title"], "Delete Test")
+            self.assertFalse(store.project_root(project_id).exists())
+            with self.assertRaises(ValueError):
+                store.delete("../../outside")
+
+    def test_project_store_marks_interrupted_work_as_failed(self) -> None:
+        module = load_module()
+        project_id = "20260721-120003-abcdef12"
+        with tempfile.TemporaryDirectory() as directory:
+            store = module.ProjectStore(Path(directory))
+            store.write(
+                project_id,
+                {
+                    "project_id": project_id,
+                    "title": "Interrupted",
+                    "status": "analyzing",
+                    "progress": 63,
+                },
+            )
+            self.assertEqual(store.recover_interrupted(), 1)
+            recovered = store.read(project_id)
+        self.assertEqual(recovered["status"], "failed")
+        self.assertEqual(recovered["progress"], 63)
+        self.assertEqual(recovered["stage"], "上次处理被中断")
+
+    def test_delete_api_removes_idle_project_and_rejects_active_project(self) -> None:
+        module = load_module()
+        idle_id = "20260721-120001-abcdef12"
+        active_id = "20260721-120002-abcdef12"
+        with tempfile.TemporaryDirectory() as directory:
+            server = module.WorkbenchHTTPServer(("127.0.0.1", 0), module.WorkbenchHandler)
+            server.store = module.ProjectStore(Path(directory))
+            server.max_upload_bytes = 1024 * 1024
+            server.store.write(idle_id, {"project_id": idle_id, "title": "Idle", "status": "ready"})
+            server.store.write(active_id, {"project_id": active_id, "title": "Active", "status": "analyzing"})
+            server.mark_project_active(active_id)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            try:
+                idle_request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects/{idle_id}",
+                    method="DELETE",
+                )
+                with urllib.request.urlopen(idle_request) as response:
+                    deleted = json.load(response)["deleted"]
+                active_request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects/{active_id}",
+                    method="DELETE",
+                )
+                with self.assertRaises(urllib.error.HTTPError) as blocked:
+                    urllib.request.urlopen(active_request)
+                active_project_still_exists = server.store.project_root(active_id).exists()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertEqual(deleted["project_id"], idle_id)
+        self.assertEqual(blocked.exception.code, 409)
+        self.assertTrue(active_project_still_exists)
 
     def test_local_api_accepts_raw_video_and_lists_project(self) -> None:
         module = load_module()
