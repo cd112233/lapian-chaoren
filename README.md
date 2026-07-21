@@ -1,0 +1,254 @@
+# 拉片超人
+
+把打斗参考视频拆成可重制、可审核、可交接的镜头工程。
+
+当前版本：`v0.2.0`，加入本地片库、人机学习闭环和最小复刻验证。
+
+它不只回答“画面里有什么”，而是把每个镜头拆成：
+
+- 切点与前后镜连续性
+- 角色位置、肢体动作和动作分拍
+- 力量来源、接触点与受力响应
+- 机位、运镜、焦段、焦点与剪辑意图
+- VFX 层级、交互光、环境反馈与声音节拍
+- 不确定项、容易漏写项和重制路线
+
+仓库不包含任何原片、商业角色素材或个人项目输出。
+
+本仓库是公开核心。个人参考片、审核记录、可信知识、生产提示词和复刻结果应保存在仓库之外；推荐目录结构见 [公开与私人数据边界](docs/public-private-boundary.md)。
+
+## 核心能力
+
+### 1. 自动建立镜头骨架
+
+`src/analyze_reference.py` 使用 FFmpeg、PySceneDetect、Pillow 和 OpenTimelineIO：
+
+- 读取视频元数据
+- 自动检测候选切点
+- 导出首帧、中间帧、尾帧和接触表
+- 按镜头切分独立视频片段
+- 输出 CSV、YAML、Markdown 和 OTIO
+
+### 2. 人工或 AI 深化拉片
+
+使用 `templates/` 中的字段表与审核提示词，继续补足摄影、动作、力学、VFX、声音和镜间因果。
+
+### 3. 逐镜审片工作台
+
+`src/build_review_page.py` 把深化后的 YAML 生成一个无需服务器、可直接打开的 HTML 审片工作台：
+
+- 视频、逐帧接触表和首中尾对照
+- 镜头搜索与状态筛选
+- 事实、判断、不确定项分层
+- 前后镜因果链
+- 人工备注和审核清单
+- 待审、问题、已确认状态
+- 字段覆盖率、自动质量诊断与人工确认度
+- 下一诊断、下一未确认和诊断字段直达
+- 动作、摄影机、接触力学、VFX、声音、风险全局泳道
+- 战斗强度、生成难度与连续性风险曲线
+- 审核 JSON、完整 Markdown、问题清单 Markdown 导出
+- 单镜 AI 返修任务导出，以及带 `shot_id` 校验和差异预览的安全导回
+- 当前镜头 AI 影像导师：支持口语化提问、专业术语辨认、多轮追问与流式回答
+- 摄影机、构图、灯光、色调、后期调色、质感合成、动作、剪辑和 VFX 专项知识
+- 浏览器本地保存、AI 修订历史与原始描述恢复
+- 字号、界面密度、面板宽度和影院模式
+
+### 4. 人机学习闭环
+
+- 把本地视频拖入片库后，自动完成切镜、抽帧、逐镜切片和学习页生成
+- AI 初拉按字段返回内容、可信度和证据，不用一段散文代替可核查结果
+- 学习、盲审和效率三种审核模式
+- 保存 AI 原判断、人工判断、最终结论、纠错原因和证据
+- 只有人工主动晋级的内容才进入可信知识
+- 代表镜头复刻任务、结果文件信息、五项评分和失败经验回流
+- 完整学习工程 JSON 导出与恢复
+
+自动质量分是用于排查遗漏的启发式信号，不替代对原始画面的人工判断。页面会重点检查逐帧证据、具体肢体、力向、变焦/运镜、VFX 时序、分身数量和前后镜桥接。
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.10+
+- FFmpeg / ffprobe
+
+```bash
+git clone https://github.com/cd112233/lapian-chaoren.git
+cd 拉片超人
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 推荐入口：本地片库
+
+```bash
+make workbench
+```
+
+浏览器会打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)。拖入视频后，本地服务会依次生成：
+
+```text
+outputs/projects/<project-id>/
+├── project.json
+├── source/
+└── analysis/
+    ├── metadata.json
+    ├── shots.csv
+    ├── shot_manifest.yaml
+    ├── learning_shots.yaml
+    ├── review.html
+    ├── clips/
+    └── shots/
+```
+
+处理和媒体访问都限制在本机 `127.0.0.1`。原片与生成项目位于 `outputs/`，不会进入 Git。
+
+需要体验 AI 初拉或影像导师时，在第二个终端启动可选 AI 服务：
+
+```bash
+make advisor-workbench
+```
+
+这会使用不做视觉推理的 `mock` 模式，并让同一个服务读取 `outputs/projects` 下的所有项目。真实模型配置见后文；不启动此服务不影响上传、自动切镜、人工拉片、审核和导出。
+
+### 命令行入口
+
+#### 第一步：分析参考视频
+
+```bash
+python src/analyze_reference.py /absolute/path/reference.mp4 \
+  --output outputs/reference_fight \
+  --detector adaptive \
+  --split-clips
+```
+
+产物示例：
+
+```text
+outputs/reference_fight/
+├── metadata.json
+├── shots.csv
+├── shot_manifest.yaml
+├── reference_timeline.otio
+├── report.md
+├── overview_contact_sheet.jpg
+├── clips/
+└── shots/
+    └── SH001/
+        ├── start.jpg
+        ├── middle.jpg
+        ├── end.jpg
+        └── contact_sheet.jpg
+```
+
+> 自动切镜只是候选结果。快速甩镜、闪白、爆炸、粒子遮挡和渐变必须人工复核。
+
+#### 第二步：深化镜头描述
+
+参考：
+
+- `templates/shot_breakdown_fields_v2.md`
+- `templates/manual_review_prompt.md`
+- `examples/demo/demo_shots.yaml`
+
+媒体路径应相对于最终生成的 HTML 文件。
+
+#### 第三步：生成审片工作台
+
+```bash
+python src/build_review_page.py \
+  examples/demo/demo_shots.yaml \
+  --output examples/demo/review_demo.html
+```
+
+然后直接打开：
+
+```text
+examples/demo/review_demo.html
+```
+
+#### 第四步：启动 AI 影像导师与 AI 初拉
+
+不配置真实模型也可以先用内置模拟模式体验完整交互：
+
+```bash
+python3 src/ai_advisor_server.py \
+  --provider mock \
+  --asset-root examples/demo
+```
+
+AI 默认关闭。先在“舒适度 → AI 影像导师”中选择“启用”，再点击镜头栏的“问 AI”或按 `A`。关闭时入口会隐藏，也不会检查服务或发起 AI 网络请求，普通拉片完全独立运行。真实模型、Ollama、视觉帧图和安全配置见 [AI 影像导师文档](docs/ai-film-advisor.md)。API Key 只放在本地服务环境变量中，不写入 HTML。
+
+AI 启用后，“学习”页签可执行当前镜头初拉。内置 `mock` 只验证接口和审核流程，并明确标记低可信度；真实画面分析需要配置支持视觉输入的模型。
+
+## 三种学习模式
+
+| 模式 | 审核顺序 | 用途 |
+|---|---|---|
+| 学习 | 先看 AI，再接受或纠正 | 熟悉术语和区分依据 |
+| 盲审 | 先写人工判断，再揭示 AI | 测量独立阅片能力 |
+| 效率 | 只显示低可信、诊断和未决字段 | 提高大量阅片速度 |
+
+如果某镜已经展示过 AI，再切换到盲审，系统会将其标记为“看过 AI 后的判断”，不计入有效盲审指标。
+
+## 审片快捷键
+
+| 快捷键 | 功能 |
+|---|---|
+| `J` / `↓` | 下一镜 |
+| `K` / `↑` | 上一镜 |
+| `Space` | 播放 / 暂停 |
+| `F` | 标记问题 |
+| `C` | 确认并进入下一镜 |
+| `T` | 影院模式 |
+| `G` | 全局动作与生产诊断 |
+| `A` | 打开当前镜头 AI 影像导师 |
+| `/` | 聚焦搜索框 |
+
+## AI 单镜返修闭环
+
+1. 在镜头标题栏点击“本镜 AI”，导出只包含当前镜头的返修任务 JSON。
+2. 将任务交给可读取帧图或视频的模型处理。
+3. 从“导出审核 → 校验并导入当前镜头 AI 结果”粘贴或读取返回 JSON。
+4. 页面强制核对 `shot_id`，先显示字段级差异，再选择“只填空白 / 追加 / 替换”。
+5. 导入后的镜头自动回到待审核；替换和恢复原始描述均有二次确认。
+
+AI 返回建议格式：
+
+```json
+{
+  "shot_id": "SH018",
+  "patch": {
+    "camera_motion": "固定低机位，主体位移造成尺寸变化；无推镜。",
+    "vfx_layers_timing": "F0501 风环增强，F0505 接触前达到峰值，命中后向画面右侧消散。"
+  }
+}
+```
+
+## 推荐生产顺序
+
+1. 自动生成完整镜头表。
+2. 人工校正切点。
+3. 选最难的 6—10 秒作为黄金测试段。
+4. 建立角色身份包与场景规则。
+5. 分别审核角色动作、摄影机和特效复杂度。
+6. 先做低模动作及摄影机预演。
+7. 通过后再替换高质量角色和场景。
+8. 从 6—10 秒扩至 20—25 秒，最后才扩满全片。
+
+## 数据与版权边界
+
+- `outputs/`、原视频、音频和角色参考图默认不进入 Git。
+- 上传参考素材前，请确认你拥有分析、存储和再创作权限。
+- 公开发布时应重新设计原创动作、角色、场景、声音和特效，而不是直接复制商业成片。
+- 自动分析只能提供证据和候选判断，不能替代人工导演审核。
+- AI 对话和 AI 初拉不会自动进入可信知识；人工结论必须填写纠错原因与证据后主动晋级。
+- 复刻结果只保存本地文件信息和评分，页面刷新后需要重新选择视频才能再次预览。
+
+更多设计说明见 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [人机学习闭环](docs/human-ai-learning-loop.md)。
+
+## 开源许可
+
+代码与仓库自带的合成示例按照 [Apache License 2.0](LICENSE) 开放。提交代码前请阅读 [贡献指南](CONTRIBUTING.md)；安全问题请按照 [安全说明](SECURITY.md) 私下报告，不要在公开 Issue 中粘贴密钥、原片路径或私人审核数据。

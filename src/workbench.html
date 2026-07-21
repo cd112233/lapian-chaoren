@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>拉片超人 · 片库与导入</title>
+<style>
+:root{
+  --ink:#1d2421;--muted:#59645f;--faint:#74807a;--paper:#ecefed;--surface:#f6f8f6;
+  --rail:#e5e9e6;--line:#cbd3ce;--line-strong:#aeb9b3;--primary:#183e34;
+  --success:#28765f;--warning:#a86131;--danger:#9d3f36;--accent:#df6737;
+  --shadow:0 5px 8px rgba(21,31,26,.12);
+}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--paper)}
+body{min-width:320px;min-height:100%;margin:0;background:var(--paper);color:var(--ink);font:14px/1.65 Inter,"SF Pro Text","PingFang SC","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input{font:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid #377b69;outline-offset:2px}
+.topbar{position:sticky;top:0;z-index:20;height:58px;display:flex;align-items:center;gap:14px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--surface)}
+.brand{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:850;white-space:nowrap}
+.brand-mark{display:grid;place-items:center;width:24px;height:24px;border-radius:4px;background:var(--ink);color:#fff;font-size:11px}
+.section-name{padding-left:14px;border-left:1px solid var(--line);color:var(--muted);font-size:12px}
+.version{margin-left:auto;color:var(--faint);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
+.health{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}
+.health i{width:7px;height:7px;border-radius:50%;background:var(--success)}
+.shell{width:min(1220px,calc(100% - 36px));margin:0 auto;padding:28px 0 46px}
+.page-head{display:flex;align-items:end;gap:24px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.page-head h1{margin:0;font-size:23px;line-height:1.25;letter-spacing:0;text-wrap:balance}
+.page-head p{max-width:60ch;margin:4px 0 0;color:var(--muted);font-size:12px}
+.page-head .count{margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap}
+.layout{display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:30px;padding-top:22px;align-items:start}
+.ingest{position:sticky;top:80px}
+.section-title{display:flex;align-items:baseline;gap:9px;margin-bottom:10px}
+.section-title h2{margin:0;font-size:15px}
+.section-title span{color:var(--faint);font-size:11px}
+.dropzone{min-height:210px;display:grid;place-items:center;padding:25px;border:1px dashed var(--line-strong);border-radius:8px;background:var(--surface);text-align:center;transition:border-color .16s ease,background .16s ease}
+.dropzone:hover,.dropzone.dragging{border-color:#4f7d6d;background:#f0f5f2}
+.dropzone.has-file{border-style:solid;border-color:#86a798}
+.drop-inner{width:100%}
+.drop-symbol{display:grid;place-items:center;width:42px;height:42px;margin:0 auto 12px;border-radius:8px;background:#e5ece8;color:#285c4c;font-size:21px;font-weight:700}
+.dropzone b{display:block;font-size:14px}
+.dropzone p{margin:5px 0 0;color:var(--muted);font-size:11px}
+.file-meta{display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);text-align:left}
+.has-file .file-meta{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px}
+.file-meta strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.file-meta span{color:var(--muted);font-size:11px}
+.file-meta button{grid-row:1/3;grid-column:2;width:30px;height:30px;border:0;background:transparent;color:var(--faint);font-size:17px}
+.project-name{margin-top:13px}
+.project-name label{display:block;margin-bottom:5px;color:#3c4742;font-size:11px;font-weight:750}
+.project-name input{width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}
+.submit-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+.primary{height:39px;padding:0 15px;border:1px solid var(--primary);border-radius:5px;background:var(--primary);color:#fff;font-weight:800}
+.primary:hover{background:#214c40}.primary:disabled{cursor:not-allowed;opacity:.45}
+.format-note{color:var(--faint);font-size:10px}
+.upload-progress{display:none;margin-top:14px;padding:11px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.upload-progress.visible{display:block}
+.progress-head{display:flex;gap:10px;color:var(--muted);font-size:11px}.progress-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}.progress-head span{margin-left:auto;font-variant-numeric:tabular-nums}
+.bar{height:5px;margin-top:8px;overflow:hidden;border-radius:4px;background:#dce3df}.bar i{display:block;width:0;height:100%;background:var(--success)}
+.upload-error{display:none;margin-top:10px;padding:9px;border:1px solid #ddb9b0;border-radius:5px;background:#fff4f1;color:#85382f;font-size:11px;line-height:1.55}.upload-error.visible{display:block}
+.library{min-width:0}
+.library-head{display:flex;align-items:center;margin-bottom:10px}.library-head h2{margin:0;font-size:15px}.refresh{margin-left:auto;height:30px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:#4d5953;font-size:11px}
+.project-list{border-top:1px solid var(--line)}
+.project-row{display:grid;grid-template-columns:minmax(0,1fr) 140px 96px;gap:15px;align-items:center;min-height:92px;padding:13px 4px;border-bottom:1px solid var(--line)}
+.project-main{min-width:0}.project-main h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;font-size:14px}.project-main p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:4px 0 0;color:var(--muted);font-size:11px}.project-main code{color:#64706a;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
+.status-block{min-width:0}.status-line{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}.status-line i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#9da7a2}.status-ready i{background:var(--success)}.status-failed i{background:var(--danger)}.status-analyzing i,.status-building i,.status-queued i{background:var(--warning)}
+.status-stage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--faint);font-size:10px}.mini-bar{height:4px;margin-top:7px;overflow:hidden;border-radius:4px;background:#dce2df}.mini-bar i{display:block;height:100%;background:#bd7341}
+.open-link{height:34px;display:inline-grid;place-items:center;border:1px solid var(--primary);border-radius:5px;background:var(--primary);color:#fff;text-decoration:none;font-size:11px;font-weight:800}.open-link[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}
+.empty{padding:58px 14px;border-bottom:1px solid var(--line);color:var(--muted);text-align:center}.empty b{display:block;color:#39453f;font-size:13px}.empty span{display:block;margin-top:4px;font-size:11px}
+.error-detail{margin-top:6px;color:var(--danger)!important;white-space:normal!important;line-height:1.45}
+@media(max-width:820px){.shell{width:min(100% - 24px,680px);padding-top:20px}.layout{grid-template-columns:1fr;gap:25px}.ingest{position:static}.page-head p{display:none}.project-row{grid-template-columns:minmax(0,1fr) 88px}.status-block{grid-column:1}.open-link{grid-column:2;grid-row:1/3}.section-name{display:none}}
+@media(max-width:520px){.topbar{padding:0 12px}.health{display:none}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 76px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">帧</span>拉片超人</div>
+  <div class="section-name">片库与导入</div>
+  <div class="version">v0.2.0</div>
+  <div class="health"><i></i>本机运行</div>
+</header>
+<main class="shell">
+  <div class="page-head">
+    <div><h1>片库与导入</h1><p>本地片源、机械切镜、审片证据与学习记录。</p></div>
+    <div class="count"><b id="projectCount">0</b> 个项目</div>
+  </div>
+  <div class="layout">
+    <section class="ingest" aria-labelledby="ingestTitle">
+      <div class="section-title"><h2 id="ingestTitle">导入片源</h2><span>本地处理</span></div>
+      <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,video/webm,.avi,.m4v" hidden>
+      <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-controls="fileInput">
+        <div class="drop-inner">
+          <div class="drop-symbol" aria-hidden="true">↓</div>
+          <b id="dropTitle">拖入视频或选择文件</b>
+          <p>MP4、MOV、MKV、AVI、WebM、M4V</p>
+          <div class="file-meta" id="fileMeta"><strong id="fileName"></strong><span id="fileSize"></span><button type="button" id="clearFile" aria-label="移除已选视频">×</button></div>
+        </div>
+      </div>
+      <div class="project-name"><label for="projectTitle">项目名称</label><input id="projectTitle" maxlength="120" placeholder="选择片源后自动填写"></div>
+      <div class="submit-row"><button class="primary" id="startUpload" disabled>开始分析</button><span class="format-note">原片不会上传到外部服务</span></div>
+      <div class="upload-progress" id="uploadProgress" aria-live="polite"><div class="progress-head"><b id="uploadName"></b><span id="uploadPercent">0%</span></div><div class="bar"><i id="uploadBar"></i></div></div>
+      <div class="upload-error" id="uploadError" role="alert"></div>
+    </section>
+    <section class="library" aria-labelledby="libraryTitle">
+      <div class="library-head"><h2 id="libraryTitle">最近项目</h2><button class="refresh" id="refreshProjects" type="button">刷新</button></div>
+      <div class="project-list" id="projectList"><div class="empty"><b>正在读取本地片库</b></div></div>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  'use strict'
+  const $ = (selector) => document.querySelector(selector)
+  const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char])
+  const allowed = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'])
+  let selectedFile = null
+  let polling = null
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+    return `${(bytes / 1024 ** index).toFixed(index > 1 ? 1 : 0)} ${units[index]}`
+  }
+
+  function formatDuration(value) {
+    const seconds = Number(value || 0)
+    if (!seconds) return '待分析'
+    const totalSeconds = Math.max(0, Math.round(seconds))
+    const minutes = Math.floor(totalSeconds / 60)
+    return `${minutes}:${String(totalSeconds % 60).padStart(2, '0')}`
+  }
+
+  function setFile(file) {
+    $('#uploadError').classList.remove('visible')
+    const extension = file?.name.split('.').pop()?.toLowerCase()
+    if (!file || !allowed.has(extension)) {
+      selectedFile = null
+      $('#dropzone').classList.remove('has-file')
+      $('#startUpload').disabled = true
+      if (file) showError('不支持这个文件格式。请选择 MP4、MOV、MKV、AVI、WebM 或 M4V。')
+      return
+    }
+    selectedFile = file
+    $('#fileName').textContent = file.name
+    $('#fileSize').textContent = formatBytes(file.size)
+    $('#dropTitle').textContent = '已选择片源'
+    $('#dropzone').classList.add('has-file')
+    $('#projectTitle').value = file.name.replace(/\.[^.]+$/, '')
+    $('#startUpload').disabled = false
+  }
+
+  function clearFile(event) {
+    event?.stopPropagation()
+    selectedFile = null
+    $('#fileInput').value = ''
+    $('#dropzone').classList.remove('has-file')
+    $('#dropTitle').textContent = '拖入视频或选择文件'
+    $('#projectTitle').value = ''
+    $('#startUpload').disabled = true
+  }
+
+  function showError(message) {
+    $('#uploadError').textContent = message
+    $('#uploadError').classList.add('visible')
+  }
+
+  function statusLabel(status) {
+    return ({ uploading: '上传中', queued: '等待处理', analyzing: '机械分析', building: '建立工作台', ready: '可以审片', failed: '处理失败' })[status] || '等待处理'
+  }
+
+  function projectRow(project) {
+    const ready = project.status === 'ready'
+    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
+    const error = project.error ? `<p class="error-detail">${escapeHTML(project.error.slice(0, 240))}</p>` : ''
+    const href = ready ? `/projects/${encodeURIComponent(project.project_id)}/${project.review_relpath}` : '#'
+    return `<article class="project-row">
+      <div class="project-main"><h3>${escapeHTML(project.title)}</h3><p>${escapeHTML(meta)}</p><code>${escapeHTML(project.project_id)}</code>${error}</div>
+      <div class="status-block"><div class="status-line status-${escapeHTML(project.status)}"><i></i>${escapeHTML(statusLabel(project.status))}</div><div class="status-stage">${escapeHTML(project.stage || '')}</div><div class="mini-bar"><i style="width:${Math.max(0, Math.min(100, Number(project.progress || 0)))}%"></i></div></div>
+      <a class="open-link" href="${href}" ${ready ? '' : 'aria-disabled="true"'}>进入审片</a>
+    </article>`
+  }
+
+  async function loadProjects() {
+    try {
+      const response = await fetch('/api/projects', { cache: 'no-store' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json()
+      const projects = Array.isArray(data.projects) ? data.projects : []
+      $('#projectCount').textContent = projects.length
+      $('#projectList').innerHTML = projects.length ? projects.map(projectRow).join('') : '<div class="empty"><b>片库还是空的</b><span>导入第一段参考视频后，处理进度会显示在这里。</span></div>'
+      const busy = projects.some((project) => !['ready', 'failed'].includes(project.status))
+      if (busy && !polling) polling = setInterval(loadProjects, 2200)
+      if (!busy && polling) { clearInterval(polling); polling = null }
+    } catch (error) {
+      $('#projectList').innerHTML = `<div class="empty"><b>无法读取本地片库</b><span>${escapeHTML(error.message || '连接失败')}</span></div>`
+    }
+  }
+
+  function uploadSelected() {
+    if (!selectedFile) return
+    $('#uploadError').classList.remove('visible')
+    $('#startUpload').disabled = true
+    $('#uploadProgress').classList.add('visible')
+    $('#uploadName').textContent = selectedFile.name
+    $('#uploadPercent').textContent = '0%'
+    $('#uploadBar').style.width = '0%'
+    const request = new XMLHttpRequest()
+    request.open('POST', '/api/projects')
+    request.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream')
+    request.setRequestHeader('X-Filename', encodeURIComponent(selectedFile.name))
+    request.setRequestHeader('X-Project-Title', encodeURIComponent($('#projectTitle').value.trim()))
+    request.upload.addEventListener('progress', (event) => {
+      if (!event.lengthComputable) return
+      const percent = Math.round(event.loaded / event.total * 100)
+      $('#uploadPercent').textContent = `${percent}%`
+      $('#uploadBar').style.width = `${percent}%`
+    })
+    request.addEventListener('load', () => {
+      let data = {}
+      try { data = JSON.parse(request.responseText || '{}') } catch {}
+      if (request.status < 200 || request.status >= 300) {
+        showError(data.error || `导入失败：HTTP ${request.status}`)
+        $('#startUpload').disabled = false
+        return
+      }
+      $('#uploadPercent').textContent = '已进入分析队列'
+      $('#uploadBar').style.width = '100%'
+      clearFile()
+      loadProjects()
+    })
+    request.addEventListener('error', () => { showError('本地连接中断，片源没有完成导入。'); $('#startUpload').disabled = false })
+    request.send(selectedFile)
+  }
+
+  const dropzone = $('#dropzone')
+  dropzone.addEventListener('click', () => $('#fileInput').click())
+  dropzone.addEventListener('keydown', (event) => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); $('#fileInput').click() } })
+  $('#fileInput').addEventListener('change', (event) => setFile(event.target.files?.[0]))
+  $('#clearFile').addEventListener('click', clearFile)
+  $('#startUpload').addEventListener('click', uploadSelected)
+  $('#refreshProjects').addEventListener('click', loadProjects)
+  for (const name of ['dragenter', 'dragover']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.add('dragging') })
+  for (const name of ['dragleave', 'drop']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.remove('dragging') })
+  dropzone.addEventListener('drop', (event) => setFile(event.dataTransfer?.files?.[0]))
+  loadProjects()
+})()
+</script>
+</body>
+</html>

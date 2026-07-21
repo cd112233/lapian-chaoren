@@ -1,0 +1,4 @@
+scenedetect>=0.7,<0.8
+Pillow>=10,<13
+PyYAML>=6,<7
+opentimelineio>=0.18,<0.20

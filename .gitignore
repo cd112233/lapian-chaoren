@@ -1,0 +1,32 @@
+.venv/
+.venv*/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Local media and generated projects
+outputs/*
+!outputs/.gitkeep
+.local/
+private/
+studio/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.aif
+*.aiff
+*.flac
+
+# Private source assets
+project/characters/references/
+*.blend1
+
+# Editor files
+.obsidian/
+.vscode/
+.idea/
