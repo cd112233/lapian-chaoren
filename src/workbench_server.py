@@ -30,28 +30,40 @@ from urllib.parse import unquote, urlparse
 
 from build_review_page import build as build_review_page
 from learning_project import WORKFLOW_VERSION, build_learning_yaml
+from local_settings import (
+    DEFAULT_PROJECTS_ROOT,
+    LocalSettingsStore,
+    normalize_projects_root,
+    resolve_projects_root,
+)
+from video_adapter import VIDEO_SUFFIXES, adapt_video
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKBENCH_HTML = Path(__file__).with_name("workbench.html")
-DEFAULT_PROJECTS_ROOT = ROOT / "outputs" / "projects"
-ALLOWED_VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+ALLOWED_VIDEO_SUFFIXES = VIDEO_SUFFIXES
 CHUNK_SIZE = 1024 * 1024
-BUSY_PROJECT_STATUSES = {"uploading", "queued", "analyzing", "building"}
+MAX_SETTINGS_BODY_BYTES = 16 * 1024
+BUSY_PROJECT_STATUSES = {"uploading", "queued", "adapting", "analyzing", "building"}
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def safe_filename(raw: str) -> str:
+def safe_filename(raw: str, content_type: str = "") -> str:
     name = Path(unquote(raw or "reference.mp4")).name.strip()
     name = re.sub(r"[^\w.()\- ]+", "_", name, flags=re.UNICODE).strip(" .")
     if not name:
         name = "reference.mp4"
     suffix = Path(name).suffix.lower()
     if suffix not in ALLOWED_VIDEO_SUFFIXES:
-        raise ValueError(f"unsupported video format: {suffix or 'missing extension'}")
+        mime = content_type.split(";", 1)[0].strip().lower()
+        if not mime.startswith("video/"):
+            raise ValueError(f"unsupported video format: {suffix or 'missing extension'}")
+        if not suffix:
+            name = f"{name[:170].rstrip(' .') or 'reference'}.input"
+            suffix = ".input"
     stem = name[: -len(suffix)].rstrip(" .") or "reference"
     stem = stem[: 180 - len(suffix)].rstrip(" .") or "reference"
     return f"{stem}{suffix}"
@@ -65,6 +77,55 @@ def safe_title(raw: str, filename: str) -> str:
 def new_project_id() -> str:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return f"{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+def select_directory(initial: Path) -> Path | None:
+    initial = initial.expanduser().resolve()
+    if sys.platform == "darwin":
+        script = """
+on run argv
+  try
+    set chosenFolder to choose folder with prompt "选择拉片项目保存位置" default location POSIX file (item 1 of argv)
+    return POSIX path of chosenFolder
+  on error number -128
+    return ""
+  end try
+end run
+""".strip()
+        result = subprocess.run(
+            ["/usr/bin/osascript", "-e", script, str(initial)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    elif os.name == "nt":
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "$dialog=New-Object System.Windows.Forms.FolderBrowserDialog;"
+            "$dialog.SelectedPath=$args[0];"
+            "if($dialog.ShowDialog() -eq 'OK'){Write-Output $dialog.SelectedPath}"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script, str(initial)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    elif shutil.which("zenity"):
+        result = subprocess.run(
+            ["zenity", "--file-selection", "--directory", f"--filename={initial}/"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    else:
+        raise RuntimeError("系统文件夹选择器不可用，请手动输入绝对路径。")
+    selected = result.stdout.strip()
+    if not selected and result.returncode in {0, 1}:
+        return None
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or "无法打开系统文件夹选择器").strip()[:1000])
+    return normalize_projects_root(selected, create=False, require_absolute=True)
 
 
 class ProjectStore:
@@ -199,29 +260,69 @@ def process_project(store: ProjectStore, project_id: str) -> None:
     manifest = store.read(project_id)
     project_root = store.project_root(project_id)
     source_path = project_root / manifest["source_relpath"]
+    analysis_source_path = source_path
     analysis_root = project_root / "analysis"
     try:
         store.update(
             project_id,
-            status="analyzing",
-            stage="正在检测切点、抽帧并生成逐镜片段",
+            status="adapting",
+            stage="正在检查视频格式",
             progress=9,
-            progress_phase="preparing",
-            progress_detail="准备分析环境",
+            progress_phase="format_check",
+            progress_detail="读取容器、视频编码和音频轨道",
             progress_current=None,
             progress_total=None,
             error=None,
         )
+        adaptation_output = project_root / "source" / "analysis_source.mp4"
+        if adaptation_output.resolve() == source_path.resolve():
+            adaptation_output = project_root / "source" / "analysis_source_adapted.mp4"
+        last_adaptation_progress = -1
+
+        def report_adaptation_progress(value: int) -> None:
+            nonlocal last_adaptation_progress
+            normalized = max(0, min(100, int(value)))
+            if normalized == last_adaptation_progress:
+                return
+            last_adaptation_progress = normalized
+            store.update(
+                project_id,
+                status="adapting",
+                stage="正在自动适配视频格式",
+                progress=9 + round(normalized * 3 / 100),
+                progress_phase="adapting",
+                progress_detail=f"本地适配进度 {normalized}%",
+            )
+
+        adaptation = adapt_video(
+            source_path,
+            adaptation_output,
+            on_progress=report_adaptation_progress,
+        )
+        analysis_source_path = adaptation.analysis_path
+        adaptation_info = adaptation.manifest()
+        manifest = store.update(
+            project_id,
+            analysis_source_relpath=analysis_source_path.relative_to(project_root).as_posix(),
+            format_adaptation=adaptation_info,
+            status="analyzing",
+            stage="视频格式已就绪",
+            progress=12,
+            progress_phase="format_ready",
+            progress_detail=adaptation.reason,
+        )
         command = [
             sys.executable,
             str(ROOT / "src" / "analyze_reference.py"),
-            str(source_path),
+            str(analysis_source_path),
             "--output",
             str(analysis_root),
             "--detector",
             "adaptive",
             "--split-clips",
             "--progress-json",
+            "--progress-offset",
+            "4",
         ]
         output_tail: deque[str] = deque(maxlen=100)
         process = subprocess.Popen(
@@ -301,14 +402,17 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             completed_at=utc_now(),
         )
     except Exception as error:
-        store.update(
-            project_id,
-            status="failed",
-            stage="处理失败",
-            progress_phase="failed",
-            progress_detail="分析未完成，请查看错误信息",
-            error=str(error)[:4000],
-        )
+        try:
+            store.update(
+                project_id,
+                status="failed",
+                stage="处理失败",
+                progress_phase="failed",
+                progress_detail="分析未完成，请查看错误信息",
+                error=str(error)[:4000],
+            )
+        except (OSError, ValueError, FileNotFoundError, json.JSONDecodeError):
+            pass
 
 
 class WorkbenchHTTPServer(ThreadingHTTPServer):
@@ -318,25 +422,69 @@ class WorkbenchHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._active_lock = threading.RLock()
+        self._state_lock = threading.RLock()
         self._active_projects: set[str] = set()
+        self.settings_store = LocalSettingsStore()
+        self.settings_locked = False
+        self.default_projects_root = DEFAULT_PROJECTS_ROOT.resolve()
+
+    def current_store(self) -> ProjectStore:
+        with self._state_lock:
+            return self.store
+
+    def reserve_project(self, project_id: str) -> ProjectStore:
+        with self._state_lock:
+            self._active_projects.add(project_id)
+            return self.store
 
     def mark_project_active(self, project_id: str) -> None:
-        with self._active_lock:
+        with self._state_lock:
             self._active_projects.add(project_id)
 
     def mark_project_inactive(self, project_id: str) -> None:
-        with self._active_lock:
+        with self._state_lock:
             self._active_projects.discard(project_id)
 
     def project_is_active(self, project_id: str) -> bool:
-        with self._active_lock:
+        with self._state_lock:
             return project_id in self._active_projects
 
+    def settings_payload(self) -> dict[str, Any]:
+        with self._state_lock:
+            store = self.store
+            return {
+                "projects_root": str(store.root),
+                "default_projects_root": str(self.default_projects_root),
+                "project_count": len(store.list()),
+                "editable": not self.settings_locked,
+                "busy": bool(self._active_projects),
+            }
 
-def run_project_worker(server: WorkbenchHTTPServer, project_id: str) -> None:
+    def switch_projects_root(self, value: str) -> dict[str, Any]:
+        with self._state_lock:
+            if self.settings_locked:
+                raise PermissionError("保存位置由启动参数锁定，无法在网页中修改。")
+            if self._active_projects:
+                raise RuntimeError("仍有项目正在上传或分析，完成后才能切换保存位置。")
+            root = normalize_projects_root(value, create=True, require_absolute=True)
+            store = ProjectStore(root)
+            recovered = store.recover_interrupted()
+            self.settings_store.save_projects_root(root)
+            self.store = store
+            payload = self.settings_payload()
+            payload["recovered"] = recovered
+            return payload
+
+    def delete_project(self, project_id: str) -> dict[str, Any]:
+        with self._state_lock:
+            if project_id in self._active_projects:
+                raise RuntimeError("项目仍在上传或分析，完成后才能删除。")
+            return self.store.delete(project_id)
+
+
+def run_project_worker(server: WorkbenchHTTPServer, store: ProjectStore, project_id: str) -> None:
     try:
-        process_project(server.store, project_id)
+        process_project(store, project_id)
     finally:
         server.mark_project_inactive(project_id)
 
@@ -370,6 +518,21 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"),
             "application/json; charset=utf-8",
         )
+
+    def _read_json(self) -> dict[str, Any]:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as error:
+            raise ValueError("无效的请求长度。") from error
+        if content_length <= 0 or content_length > MAX_SETTINGS_BODY_BYTES:
+            raise ValueError("设置请求为空或过大。")
+        try:
+            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("设置请求不是有效 JSON。") from error
+        if not isinstance(payload, dict):
+            raise ValueError("设置请求必须是 JSON 对象。")
+        return payload
 
     def _serve_file(self, path: Path) -> None:
         if not path.is_file():
@@ -433,23 +596,27 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._serve_file(WORKBENCH_HTML)
             return
         if path == "/api/health":
+            store = self.server.current_store()
             self._send_json(
                 HTTPStatus.OK,
                 {
                     "ok": True,
                     "service": "lapian-local-workbench",
                     "workflow_version": WORKFLOW_VERSION,
-                    "projects_root": str(self.server.store.root),
+                    "projects_root": str(store.root),
                 },
             )
             return
+        if path == "/api/settings":
+            self._send_json(HTTPStatus.OK, {"settings": self.server.settings_payload()})
+            return
         if path == "/api/projects":
-            self._send_json(HTTPStatus.OK, {"projects": self.server.store.list()})
+            self._send_json(HTTPStatus.OK, {"projects": self.server.current_store().list()})
             return
         match = re.fullmatch(r"/api/projects/([^/]+)", path)
         if match:
             try:
-                manifest = self.server.store.read(match.group(1))
+                manifest = self.server.current_store().read(match.group(1))
             except (ValueError, FileNotFoundError):
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "project not found"})
                 return
@@ -458,7 +625,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/projects/([^/]+)/(.*)", path)
         if match:
             try:
-                root = self.server.store.project_root(match.group(1))
+                root = self.server.current_store().project_root(match.group(1))
                 target = (root / unquote(match.group(2))).resolve()
                 target.relative_to(root)
             except (ValueError, FileNotFoundError):
@@ -470,6 +637,20 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path == "/api/settings/select-projects-root":
+            if self.server.settings_locked:
+                self._send_json(HTTPStatus.CONFLICT, {"error": "保存位置由启动参数锁定。"})
+                return
+            try:
+                selected = select_directory(self.server.current_store().root)
+            except (ValueError, PermissionError, RuntimeError, OSError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)[:1000]})
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {"cancelled": selected is None, "path": str(selected) if selected else ""},
+            )
+            return
         if parsed.path != "/api/projects":
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
@@ -484,40 +665,46 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "video exceeds local upload limit"})
             return
         try:
-            filename = safe_filename(self.headers.get("X-Filename", ""))
+            content_type = self.headers.get("Content-Type", "")
+            filename = safe_filename(self.headers.get("X-Filename", ""), content_type)
             title = safe_title(self.headers.get("X-Project-Title", ""), filename)
         except ValueError as error:
             self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": str(error)})
             return
 
         project_id = new_project_id()
-        root = self.server.store.project_root(project_id)
-        source_path = root / "source" / filename
-        created_at = utc_now()
-        manifest = {
-            "project_id": project_id,
-            "title": title,
-            "source_filename": filename,
-            "source_relpath": source_path.relative_to(root).as_posix(),
-            "source_size": content_length,
-            "source_fingerprint": "",
-            "status": "uploading",
-            "stage": "正在保存本地片源",
-            "progress": 0,
-            "progress_phase": "uploading",
-            "progress_detail": "正在接收本地片源",
-            "progress_current": None,
-            "progress_total": None,
-            "workflow_version": WORKFLOW_VERSION,
-            "created_at": created_at,
-            "updated_at": created_at,
-            "error": None,
-        }
-        self.server.store.write(project_id, manifest)
-        self.server.mark_project_active(project_id)
+        store = self.server.reserve_project(project_id)
+        root: Path | None = None
+        manifest_created = False
         try:
+            root = store.project_root(project_id)
+            source_path = root / "source" / filename
+            created_at = utc_now()
+            manifest = {
+                "project_id": project_id,
+                "title": title,
+                "source_filename": filename,
+                "source_relpath": source_path.relative_to(root).as_posix(),
+                "analysis_source_relpath": source_path.relative_to(root).as_posix(),
+                "source_size": content_length,
+                "source_fingerprint": "",
+                "status": "uploading",
+                "stage": "正在保存本地片源",
+                "progress": 0,
+                "progress_phase": "uploading",
+                "progress_detail": "正在接收本地片源",
+                "progress_current": None,
+                "progress_total": None,
+                "workflow_version": WORKFLOW_VERSION,
+                "created_at": created_at,
+                "updated_at": created_at,
+                "error": None,
+                "format_adaptation": {"status": "pending", "preserved_original": True},
+            }
+            store.write(project_id, manifest)
+            manifest_created = True
             fingerprint = write_upload(self.rfile, source_path, content_length)
-            manifest = self.server.store.update(
+            manifest = store.update(
                 project_id,
                 source_fingerprint=fingerprint,
                 status="queued",
@@ -528,24 +715,68 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             )
         except Exception as error:
             self.server.mark_project_inactive(project_id)
-            self.server.store.update(
-                project_id,
-                status="failed",
-                stage="片源保存失败",
-                progress=0,
-                error=str(error)[:2000],
-            )
+            if manifest_created:
+                try:
+                    store.update(
+                        project_id,
+                        status="failed",
+                        stage="片源保存失败",
+                        progress=0,
+                        error=str(error)[:2000],
+                    )
+                except (OSError, ValueError, FileNotFoundError, json.JSONDecodeError):
+                    pass
+            elif root is not None:
+                shutil.rmtree(root, ignore_errors=True)
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error), "project_id": project_id})
             return
 
         worker = threading.Thread(
             target=run_project_worker,
-            args=(self.server, project_id),
+            args=(self.server, store, project_id),
             daemon=True,
             name=f"lapian-{project_id}",
         )
-        worker.start()
+        try:
+            worker.start()
+        except RuntimeError as error:
+            self.server.mark_project_inactive(project_id)
+            store.update(
+                project_id,
+                status="failed",
+                stage="无法启动分析线程",
+                progress=8,
+                progress_phase="failed",
+                progress_detail="片源副本已保留",
+                error=str(error)[:2000],
+            )
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error), "project_id": project_id})
+            return
         self._send_json(HTTPStatus.ACCEPTED, {"project": manifest})
+
+    def do_PUT(self) -> None:  # noqa: N802
+        if urlparse(self.path).path != "/api/settings/projects-root":
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        try:
+            payload = self._read_json()
+            value = payload.get("path")
+            if not isinstance(value, str):
+                raise ValueError("保存位置必须是路径字符串。")
+            settings = self.server.switch_projects_root(value)
+        except PermissionError as error:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": str(error)})
+            return
+        except RuntimeError as error:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
+            return
+        except ValueError as error:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        except OSError as error:
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)[:1000]})
+            return
+        self._send_json(HTTPStatus.OK, {"settings": settings})
 
     def do_DELETE(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
@@ -554,14 +785,11 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         project_id = match.group(1)
-        if self.server.project_is_active(project_id):
-            self._send_json(
-                HTTPStatus.CONFLICT,
-                {"error": "项目仍在上传或分析，完成后才能删除。"},
-            )
-            return
         try:
-            manifest = self.server.store.delete(project_id)
+            manifest = self.server.delete_project(project_id)
+        except RuntimeError as error:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
+            return
         except (ValueError, FileNotFoundError):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "project not found"})
             return
@@ -581,13 +809,15 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    settings_path = os.getenv("LAPIAN_SETTINGS_PATH", "").strip()
     parser.add_argument("--host", default=os.getenv("LAPIAN_WORKBENCH_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("LAPIAN_WORKBENCH_PORT", "8765")))
     parser.add_argument(
         "--projects-root",
         type=Path,
-        default=Path(os.getenv("LAPIAN_PROJECTS_ROOT", DEFAULT_PROJECTS_ROOT)),
+        default=None,
     )
+    parser.add_argument("--settings-path", type=Path, default=Path(settings_path) if settings_path else None)
     parser.add_argument(
         "--max-upload-gb",
         type=float,
@@ -602,11 +832,15 @@ def serve(
     host: str,
     port: int,
     projects_root: Path,
+    settings_store: LocalSettingsStore,
+    settings_locked: bool,
     max_upload_bytes: int,
     open_browser: bool,
 ) -> None:
     server = WorkbenchHTTPServer((host, port), WorkbenchHandler)
     server.store = ProjectStore(projects_root)
+    server.settings_store = settings_store
+    server.settings_locked = settings_locked
     recovered = server.store.recover_interrupted()
     server.max_upload_bytes = max_upload_bytes
     url = f"http://{host}:{server.server_address[1]}"
@@ -626,11 +860,19 @@ def serve(
 
 def main() -> int:
     args = parse_args()
+    settings_store = LocalSettingsStore(args.settings_path)
+    projects_root = resolve_projects_root(
+        cli_root=args.projects_root,
+        settings=settings_store,
+        env_root=os.getenv("LAPIAN_PROJECTS_ROOT"),
+    )
     max_upload_bytes = max(1, int(args.max_upload_gb * 1024 * 1024 * 1024))
     serve(
         host=args.host,
         port=args.port,
-        projects_root=args.projects_root,
+        projects_root=projects_root,
+        settings_store=settings_store,
+        settings_locked=args.projects_root is not None,
         max_upload_bytes=max_upload_bytes,
         open_browser=not args.no_open,
     )

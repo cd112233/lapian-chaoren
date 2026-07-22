@@ -131,8 +131,9 @@ class CommandError(RuntimeError):
 
 
 class ProgressEmitter:
-    def __init__(self, enabled: bool = False) -> None:
+    def __init__(self, enabled: bool = False, *, offset: int = 0) -> None:
         self.enabled = enabled
+        self.offset = offset
         self._last_event: tuple[Any, ...] | None = None
 
     def emit(
@@ -148,7 +149,7 @@ class ProgressEmitter:
     ) -> None:
         if not self.enabled:
             return
-        normalized = max(0, min(100, int(round(progress))))
+        normalized = max(0, min(100, int(round(progress)) + self.offset))
         signature = (normalized, stage, detail, current, total, phase)
         if not force and signature == self._last_event:
             return
@@ -646,7 +647,7 @@ def write_report(shots: list[Shot], output_root: Path, path: Path) -> None:
             "1. 人工校正镜头切点。",
             "2. 填写 `shots.csv` 或 `shot_manifest.yaml`。",
             "3. 选出最难且最有代表性的 6—10 秒作为黄金测试段。",
-            "4. 建立目标角色的干净身份包，再做角色替换。",
+            "4. 建立两名妖怪的干净身份包，再做角色替换。",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -704,12 +705,18 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Emit newline-delimited JSON progress events for the local workbench",
     )
+    parser.add_argument(
+        "--progress-offset",
+        type=int,
+        default=0,
+        help="Add an offset to emitted JSON progress values (used by the local workbench)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
-    progress = ProgressEmitter(args.progress_json)
+    progress = ProgressEmitter(args.progress_json, offset=args.progress_offset)
     progress.emit(9, "正在检查分析环境", phase="preparing", force=True)
     require_binary("ffmpeg")
     require_binary("ffprobe")

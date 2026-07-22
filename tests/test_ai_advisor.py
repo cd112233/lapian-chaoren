@@ -12,7 +12,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
 MODULE_PATH = ROOT / "src" / "ai_advisor_server.py"
+sys.path.insert(0, str(SRC))
 
 
 def load_module():
@@ -63,6 +65,35 @@ class AIAdvisorTests(unittest.TestCase):
         self.assertEqual(len(images), 1)
         self.assertEqual(images[0]["label"], "首帧")
         self.assertTrue(images[0]["data"])
+
+    def test_visual_asset_root_follows_saved_project_library(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first-library"
+            second = root / "second-library"
+            relative_frame = Path("project-id") / "analysis" / "frame.jpg"
+            for library, content in ((first, b"first"), (second, b"second")):
+                frame = library / relative_frame
+                frame.parent.mkdir(parents=True)
+                frame.write_bytes(content)
+            settings = module.LocalSettingsStore(root / "settings.json")
+            settings.save_projects_root(first)
+            config = module.AdvisorConfig(
+                provider="mock",
+                model="film-advisor-mock",
+                project_settings=settings,
+            )
+            payload = {"context": {"assets": {"start_frame": relative_frame.as_posix()}}}
+
+            first_images = module.collect_visual_assets(payload, config.current_asset_root())
+            settings.save_projects_root(second)
+            second_images = module.collect_visual_assets(payload, config.current_asset_root())
+
+        self.assertEqual(len(first_images), 1)
+        self.assertEqual(len(second_images), 1)
+        self.assertNotEqual(first_images[0]["data"], second_images[0]["data"])
+        self.assertEqual(config.public_dict()["asset_root_mode"], "project-library")
 
     def test_browser_origin_allowlist(self) -> None:
         module = load_module()

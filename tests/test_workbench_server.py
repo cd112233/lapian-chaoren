@@ -32,6 +32,8 @@ class WorkbenchServerTests(unittest.TestCase):
     def test_safe_filename_rejects_non_video(self) -> None:
         module = load_module()
         self.assertEqual(module.safe_filename("%E6%89%93%E6%96%97%20%E5%8F%82%E8%80%83.mp4"), "打斗 参考.mp4")
+        self.assertEqual(module.safe_filename("camera_capture.data", "video/x-custom"), "camera_capture.data")
+        self.assertTrue(module.safe_filename("camera_capture", "video/mp4").endswith(".input"))
         long_name = module.safe_filename(f"{'a' * 300}.mp4")
         self.assertLessEqual(len(long_name), 180)
         self.assertTrue(long_name.endswith(".mp4"))
@@ -49,9 +51,14 @@ class WorkbenchServerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('id="uploadProgressBar"', document)
         self.assertIn('id="deleteDialog"', document)
+        self.assertIn('id="locationDialog"', document)
+        self.assertIn('id="projectsRootInput"', document)
         self.assertIn("method: 'DELETE'", document)
+        self.assertIn("method: 'PUT'", document)
         self.assertIn("project.progress_current", document)
         self.assertIn("project.progress_phase === 'detecting'", document)
+        self.assertIn("video/*", document)
+        self.assertIn("自动识别编码", document)
 
     def test_streamed_upload_hashes_and_moves_atomically(self) -> None:
         module = load_module()
@@ -166,6 +173,95 @@ class WorkbenchServerTests(unittest.TestCase):
         self.assertEqual(blocked.exception.code, 409)
         self.assertTrue(active_project_still_exists)
 
+    def test_settings_api_switches_library_without_moving_old_projects(self) -> None:
+        module = load_module()
+        old_id = "20260721-120004-abcdef12"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_root = root / "old-library"
+            new_root = root / "new-library"
+            blocked_root = root / "blocked-library"
+            server = module.WorkbenchHTTPServer(("127.0.0.1", 0), module.WorkbenchHandler)
+            server.store = module.ProjectStore(old_root)
+            server.settings_store = module.LocalSettingsStore(root / "settings.json")
+            server.default_projects_root = (root / "default-library").resolve()
+            server.max_upload_bytes = 1024 * 1024
+            server.store.write(old_id, {"project_id": old_id, "title": "Old Project", "status": "ready"})
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/settings") as response:
+                    before = json.load(response)["settings"]
+
+                switch_request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/settings/projects-root",
+                    data=json.dumps({"path": str(new_root)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="PUT",
+                )
+                with urllib.request.urlopen(switch_request) as response:
+                    after = json.load(response)["settings"]
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/projects") as response:
+                    projects_after_switch = json.load(response)["projects"]
+
+                server.mark_project_active("20260721-120005-abcdef12")
+                blocked_request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/settings/projects-root",
+                    data=json.dumps({"path": str(blocked_root)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="PUT",
+                )
+                with self.assertRaises(urllib.error.HTTPError) as blocked:
+                    urllib.request.urlopen(blocked_request)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+            self.assertEqual(before["projects_root"], str(old_root.resolve()))
+            self.assertEqual(before["project_count"], 1)
+            self.assertEqual(after["projects_root"], str(new_root.resolve()))
+            self.assertEqual(projects_after_switch, [])
+            self.assertEqual(server.settings_store.projects_root(), new_root.resolve())
+            self.assertTrue((old_root / old_id / "project.json").is_file())
+            self.assertEqual(blocked.exception.code, 409)
+            self.assertEqual(server.current_store().root, new_root.resolve())
+
+    def test_settings_picker_returns_path_without_switching_library(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            current = root / "current"
+            selected = root / "selected"
+            selected.mkdir()
+            server = module.WorkbenchHTTPServer(("127.0.0.1", 0), module.WorkbenchHandler)
+            server.store = module.ProjectStore(current)
+            server.settings_store = module.LocalSettingsStore(root / "settings.json")
+            server.max_upload_bytes = 1024 * 1024
+            original_picker = module.select_directory
+            module.select_directory = lambda initial: selected.resolve()
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            try:
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/settings/select-projects-root",
+                    data=b"",
+                    method="POST",
+                )
+                with urllib.request.urlopen(request) as response:
+                    result = json.load(response)
+            finally:
+                module.select_directory = original_picker
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertFalse(result["cancelled"])
+        self.assertEqual(result["path"], str(selected.resolve()))
+        self.assertEqual(server.current_store().root, current.resolve())
+
     def test_local_api_accepts_raw_video_and_lists_project(self) -> None:
         module = load_module()
         module.process_project = lambda store, project_id: None
@@ -206,6 +302,36 @@ class WorkbenchServerTests(unittest.TestCase):
         self.assertEqual(range_status, 206)
         self.assertEqual(range_header, "bytes 0-4/11")
         self.assertEqual(range_body, b"small")
+
+    def test_local_api_accepts_video_mime_with_unknown_extension_for_later_adaptation(self) -> None:
+        module = load_module()
+        module.process_project = lambda store, project_id: None
+        with tempfile.TemporaryDirectory() as directory:
+            server = module.WorkbenchHTTPServer(("127.0.0.1", 0), module.WorkbenchHandler)
+            server.store = module.ProjectStore(Path(directory))
+            server.max_upload_bytes = 1024 * 1024
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            try:
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects",
+                    data=b"video-content",
+                    headers={
+                        "Content-Type": "video/x-custom",
+                        "X-Filename": "camera-capture.data",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(request) as response:
+                    created = json.load(response)["project"]
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertEqual(created["source_filename"], "camera-capture.data")
+        self.assertEqual(created["format_adaptation"]["status"], "pending")
 
 
 if __name__ == "__main__":

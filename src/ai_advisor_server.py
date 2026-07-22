@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 from urllib.parse import urlparse
 
+from local_settings import LocalSettingsStore, resolve_projects_root
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROMPT = ROOT / "templates" / "film_advisor_system_prompt.md"
@@ -74,15 +76,32 @@ class AdvisorConfig:
     prompt_path: Path = DEFAULT_PROMPT
     initial_prompt_path: Path = DEFAULT_INITIAL_PROMPT
     asset_root: Path | None = None
+    project_settings: LocalSettingsStore | None = None
+    projects_env_root: str = ""
     timeout_seconds: int = 120
     max_body_bytes: int = 1_000_000
 
+    def current_asset_root(self) -> Path | None:
+        if self.asset_root is not None:
+            return self.asset_root
+        if self.project_settings is None:
+            return None
+        try:
+            return resolve_projects_root(
+                settings=self.project_settings,
+                env_root=self.projects_env_root,
+            )
+        except (OSError, ValueError, PermissionError):
+            return None
+
     def public_dict(self) -> dict[str, Any]:
+        asset_root = self.current_asset_root()
         return {
             "provider": self.provider,
             "model": self.model,
-            "vision_assets": bool(self.asset_root),
-            "asset_root_configured": bool(self.asset_root),
+            "vision_assets": bool(asset_root),
+            "asset_root_configured": bool(asset_root),
+            "asset_root_mode": "fixed" if self.asset_root else "project-library",
             "initial_analysis": True,
         }
 
@@ -623,7 +642,7 @@ def iter_advice(
     payload: dict[str, Any],
     system_prompt: str,
 ) -> tuple[Iterable[str], int]:
-    images = collect_visual_assets(payload, config.asset_root)
+    images = collect_visual_assets(payload, config.current_asset_root())
     messages = build_messages(payload, system_prompt)
     if config.provider == "mock":
         return _chunk_text(_mock_answer(payload, len(images))), len(images)
@@ -639,7 +658,7 @@ def generate_initial_analysis(
     payload: dict[str, Any],
     system_prompt: str,
 ) -> tuple[dict[str, Any], int]:
-    images = collect_visual_assets(payload, config.asset_root)
+    images = collect_visual_assets(payload, config.current_asset_root())
     if config.provider == "mock":
         return _mock_initial_analysis(payload, len(images)), len(images)
     messages = build_initial_messages(payload, system_prompt)
@@ -804,6 +823,7 @@ class AdvisorHandler(BaseHTTPRequestHandler):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    settings_path = os.getenv("LAPIAN_SETTINGS_PATH", "").strip()
     parser.add_argument("--host", default=os.getenv("AI_ADVISOR_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("AI_ADVISOR_PORT", "8766")))
     parser.add_argument(
@@ -817,6 +837,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt", type=Path, default=DEFAULT_PROMPT)
     parser.add_argument("--initial-prompt", type=Path, default=DEFAULT_INITIAL_PROMPT)
     parser.add_argument("--asset-root", type=Path, default=os.getenv("AI_ADVISOR_ASSET_ROOT"))
+    parser.add_argument("--settings-path", type=Path, default=Path(settings_path) if settings_path else None)
     parser.add_argument(
         "--timeout",
         type=int,
@@ -838,6 +859,7 @@ def config_from_args(args: argparse.Namespace) -> AdvisorConfig:
     asset_root = Path(args.asset_root).expanduser().resolve() if args.asset_root else None
     if asset_root and not asset_root.is_dir():
         raise SystemExit(f"asset root is not a directory: {asset_root}")
+    project_settings = None if asset_root else LocalSettingsStore(args.settings_path)
     return AdvisorConfig(
         host=args.host,
         port=args.port,
@@ -848,6 +870,8 @@ def config_from_args(args: argparse.Namespace) -> AdvisorConfig:
         prompt_path=Path(args.prompt).expanduser().resolve(),
         initial_prompt_path=Path(args.initial_prompt).expanduser().resolve(),
         asset_root=asset_root,
+        project_settings=project_settings,
+        projects_env_root=os.getenv("LAPIAN_PROJECTS_ROOT", ""),
         timeout_seconds=max(10, args.timeout),
     )
 
@@ -861,8 +885,10 @@ def serve(config: AdvisorConfig) -> None:
         f"AI film advisor listening on http://{config.host}:{config.port} "
         f"({config.provider} / {config.model})"
     )
-    if config.asset_root:
-        print(f"Visual asset root: {config.asset_root}")
+    asset_root = config.current_asset_root()
+    if asset_root:
+        mode = "fixed" if config.asset_root else "follows project library settings"
+        print(f"Visual asset root: {asset_root} ({mode})")
     else:
         print("Visual assets disabled; answers use text context only.")
     try:

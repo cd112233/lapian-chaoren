@@ -86,6 +86,7 @@ flowchart LR
 │   ├── analyze_reference.py
 │   ├── ai_advisor_server.py
 │   ├── workbench_server.py
+│   ├── video_adapter.py
 │   ├── workbench.html
 │   ├── learning_project.py
 │   ├── build_review_page.py
@@ -126,9 +127,14 @@ confirmed  已人工确认
 
 ## 本地片库
 
-`src/workbench_server.py` 只监听 `127.0.0.1`，接收浏览器拖入的原始视频并写入受控项目目录。后台依次运行机械分析、学习 YAML 生成和审片页面生成。媒体响应支持 HTTP Range，避免整段视频进入内存并允许播放器拖动定位。
+`src/workbench_server.py` 只监听 `127.0.0.1`，接收浏览器拖入的原始视频并写入受控项目目录。后台先由 `src/video_adapter.py` 用 `ffprobe` 检查容器、编码和音频轨道：已经兼容的 MP4/MOV 直接使用，兼容流但容器不合适时重新封装，其他情况生成 H.264/AAC/yuv420p 的 `source/analysis_source.mp4`。原片副本不会被覆盖，随后才运行机械分析、学习 YAML 生成和审片页面生成。媒体响应支持 HTTP Range，避免整段视频进入内存并允许播放器拖动定位。
 
 片库不承担云端协作，也不会读取项目根目录之外的文件。上传文件名、项目 ID 和静态文件路径都经过边界校验。
+
+项目根目录由以下顺序决定：显式 `--projects-root`、用户配置文件中的网页设置、
+`LAPIAN_PROJECTS_ROOT`、仓库内默认 `outputs/projects`。网页切换只替换当前
+`ProjectStore`，不迁移旧项目；有上传、格式适配或分析线程时拒绝切换。可选 AI 网关
+在未指定固定素材根目录时读取同一用户配置，因此片库切换后帧图路径不会脱节。
 
 ## 人机学习层
 

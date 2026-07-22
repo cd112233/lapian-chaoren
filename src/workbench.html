@@ -21,7 +21,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .brand{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:850;white-space:nowrap}
 .brand-mark{display:grid;place-items:center;width:24px;height:24px;border-radius:4px;background:var(--ink);color:#fff;font-size:11px}
 .section-name{padding-left:14px;border-left:1px solid var(--line);color:var(--muted);font-size:12px}
-.version{margin-left:auto;color:var(--faint);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
+.topbar-actions{min-width:0;margin-left:auto;display:flex;align-items:center;gap:10px}.location-button{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:#43504a;font-size:11px;font-weight:750;white-space:nowrap}.location-button:hover{border-color:var(--line-strong);background:var(--rail)}.version{color:var(--faint);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
 .health{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}
 .health i{width:7px;height:7px;border-radius:50%;background:var(--success)}
 .shell{width:min(1220px,calc(100% - 36px));margin:0 auto;padding:28px 0 46px}
@@ -49,7 +49,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .project-name{margin-top:13px}
 .project-name label{display:block;margin-bottom:5px;color:#3c4742;font-size:11px;font-weight:750}
 .project-name input{width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}
-.submit-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+.submit-row{display:flex;align-items:center;gap:10px;margin-top:12px}.submit-row .primary{flex:0 0 auto;white-space:nowrap}.format-note{min-width:0}
 .primary{height:39px;padding:0 15px;border:1px solid var(--primary);border-radius:5px;background:var(--primary);color:#fff;font-weight:800}
 .primary:hover{background:#214c40}.primary:disabled{cursor:not-allowed;opacity:.45}
 .format-note{color:var(--faint);font-size:10px}
@@ -64,14 +64,15 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .project-list{border-top:1px solid var(--line)}
 .project-row{display:grid;grid-template-columns:minmax(0,1fr) 158px 116px;gap:15px;align-items:center;min-height:98px;padding:13px 4px;border-bottom:1px solid var(--line)}
 .project-main{min-width:0}.project-main h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;font-size:14px}.project-main p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:4px 0 0;color:var(--muted);font-size:11px}.project-main code{color:#64706a;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
-.status-block{min-width:0}.status-line{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}.status-line i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#9da7a2}.status-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-line strong{margin-left:auto;color:#4d5853;font-variant-numeric:tabular-nums}.status-ready i{background:var(--success)}.status-failed i{background:var(--danger)}.status-analyzing i,.status-building i,.status-queued i,.status-uploading i{background:var(--warning)}
+.status-block{min-width:0}.status-line{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}.status-line i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#9da7a2}.status-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-line strong{margin-left:auto;color:#4d5853;font-variant-numeric:tabular-nums}.status-ready i{background:var(--success)}.status-failed i{background:var(--danger)}.status-adapting i,.status-analyzing i,.status-building i,.status-queued i,.status-uploading i{background:var(--warning)}
 .status-stage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--faint);font-size:10px}.mini-bar{height:4px;margin-top:7px;overflow:hidden;border-radius:4px;background:#dce2df}.mini-bar i{display:block;height:100%;background:#bd7341;transition:width .2s cubic-bezier(.22,1,.36,1)}.status-ready+.status-stage~.mini-bar i{background:var(--success)}
 .project-actions{display:grid;grid-template-columns:1fr;gap:6px}.open-link,.delete-project{height:32px;display:inline-grid;place-items:center;border-radius:5px;font-size:11px;font-weight:800}.open-link{border:1px solid var(--primary);background:var(--primary);color:#fff;text-decoration:none}.open-link[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}.delete-project{border:1px solid #d3bbb5;background:transparent;color:#8f4036}.delete-project:hover:not(:disabled){border-color:var(--danger);background:#fff4f1}.delete-project:disabled{cursor:not-allowed;border-color:var(--line);color:#929b97;opacity:.65}
 .empty{padding:58px 14px;border-bottom:1px solid var(--line);color:var(--muted);text-align:center}.empty b{display:block;color:#39453f;font-size:13px}.empty span{display:block;margin-top:4px;font-size:11px}
 .error-detail{margin-top:6px;color:var(--danger)!important;white-space:normal!important;line-height:1.45}
 .delete-dialog{width:min(430px,calc(100vw - 28px));padding:0;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink)}.delete-dialog::backdrop{background:rgba(12,16,14,.42)}.dialog-head{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.dialog-head h2{margin:0;font-size:15px}.dialog-close{margin-left:auto;width:30px;height:30px;border:0;background:transparent;color:var(--muted);font-size:18px}.dialog-body{padding:15px 16px}.dialog-body p{margin:0;color:var(--muted);font-size:12px;line-height:1.7}.delete-target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:11px 0;padding:8px 9px;border-radius:5px;background:var(--rail);font-weight:800}.dialog-warning{color:#7e3a32!important}.dialog-error{margin-top:9px!important;color:var(--danger)!important}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}.secondary,.danger-action{height:34px;padding:0 12px;border-radius:5px;font-weight:750}.secondary{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink)}.danger-action{border:1px solid var(--danger);background:var(--danger);color:#fff}.danger-action:disabled{cursor:wait;opacity:.55}.toast{position:fixed;right:18px;bottom:16px;z-index:50;padding:9px 12px;border-radius:5px;background:#17221d;color:#fff;font-size:11px;opacity:0;transform:translateY(6px);pointer-events:none;transition:opacity .16s ease,transform .16s ease}.toast.visible{opacity:1;transform:none}
+.settings-dialog{width:min(610px,calc(100vw - 28px));padding:0;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink)}.settings-dialog::backdrop{background:rgba(12,16,14,.42)}.settings-dialog .dialog-body{padding:0 18px 17px}.location-current{margin:0 -18px 16px;padding:13px 18px;border-bottom:1px solid var(--line);background:var(--rail)}.location-current span,.path-label{display:block;color:var(--muted);font-size:11px;font-weight:750}.location-current code{display:block;overflow-wrap:anywhere;margin-top:4px;color:#303b36;font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}.location-current small{display:block;margin-top:3px;color:var(--faint);font-size:10px}.path-label{margin-bottom:6px;color:#3c4742}.path-control{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.path-control input{min-width:0;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:#fbfcfb;color:var(--ink);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}.path-control input:disabled{background:var(--rail);color:var(--faint)}.path-control .secondary{height:38px;white-space:nowrap}.secondary:hover:not(:disabled){background:var(--rail)}.secondary:disabled{cursor:not-allowed;opacity:.5}.path-help{margin-top:6px!important;color:var(--faint)!important;font-size:10px!important}.location-note{margin-top:14px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:#46524c;font-size:11px;line-height:1.65}.location-note b{display:block;margin-bottom:2px;color:var(--ink)}.setting-status{min-height:18px;margin-top:9px!important;color:var(--faint)!important;font-size:10px!important}.settings-actions{align-items:center}.settings-actions .restore-default{margin-right:auto}.settings-actions-group{display:flex;gap:8px}.settings-error{margin-top:8px!important;color:var(--danger)!important}.save-location{height:34px;padding:0 13px}.save-location:disabled{cursor:not-allowed;opacity:.45}
 @media(max-width:820px){.shell{width:min(100% - 24px,680px);padding-top:20px}.layout{grid-template-columns:1fr;gap:25px}.ingest{position:static}.page-head p{display:none}.project-row{grid-template-columns:minmax(0,1fr) 112px}.status-block{grid-column:1}.project-actions{grid-column:2;grid-row:1/3}.section-name{display:none}}
-@media(max-width:520px){.topbar{padding:0 12px}.health{display:none}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 88px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}.toast{right:9px;bottom:9px;left:9px;text-align:center}}
+@media(max-width:520px){.topbar{gap:9px;padding:0 10px}.health{display:none}.topbar-actions{gap:7px}.location-button{padding:0 8px}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 88px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}.path-control{grid-template-columns:1fr}.path-control .secondary{width:100%}.settings-actions{align-items:stretch;flex-direction:column}.settings-actions .restore-default{margin:0}.settings-actions-group{display:grid;grid-template-columns:1fr 1fr}.settings-actions button{width:100%}.toast{right:9px;bottom:9px;left:9px;text-align:center}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -79,7 +80,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 <header class="topbar">
   <div class="brand"><span class="brand-mark">帧</span>拉片超人</div>
   <div class="section-name">片库与导入</div>
-  <div class="version">v0.2.1</div>
+  <div class="topbar-actions"><button class="location-button" id="openLocationSettings" type="button">保存位置</button><div class="version">v0.2.2</div></div>
   <div class="health"><i></i>本机运行</div>
 </header>
 <main class="shell">
@@ -90,17 +91,17 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   <div class="layout">
     <section class="ingest" aria-labelledby="ingestTitle">
       <div class="section-title"><h2 id="ingestTitle">导入片源</h2><span>本地处理</span></div>
-      <input type="file" id="fileInput" accept="video/mp4,video/quicktime,video/x-matroska,video/webm,.avi,.m4v" hidden>
+      <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.wmv,.flv,.ts,.m2ts,.mts,.3gp,.3g2,.mpg,.mpeg,.ogv,.vob,.mxf,.rm,.rmvb" hidden>
       <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-controls="fileInput">
         <div class="drop-inner">
-          <div class="drop-symbol" aria-hidden="true">↓</div>
+      <div class="drop-symbol" aria-hidden="true">↓</div>
           <b id="dropTitle">拖入视频或选择文件</b>
-          <p>MP4、MOV、MKV、AVI、WebM、M4V</p>
+          <p>常见视频格式 · 编码会自动适配</p>
           <div class="file-meta" id="fileMeta"><strong id="fileName"></strong><span id="fileSize"></span><button type="button" id="clearFile" aria-label="移除已选视频">×</button></div>
         </div>
       </div>
       <div class="project-name"><label for="projectTitle">项目名称</label><input id="projectTitle" maxlength="120" placeholder="选择片源后自动填写"></div>
-      <div class="submit-row"><button class="primary" id="startUpload" disabled>开始分析</button><span class="format-note">原片不会上传到外部服务</span></div>
+      <div class="submit-row"><button class="primary" id="startUpload" disabled>开始分析</button><span class="format-note">自动识别编码，需要时本地适配为 MP4；原片保留</span></div>
       <div class="upload-progress" id="uploadProgress" aria-live="polite">
         <div class="progress-head"><b id="uploadName"></b><span id="uploadPercent">0%</span></div>
         <div class="progress-stage" id="uploadStage">等待开始</div>
@@ -125,18 +126,32 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   </div>
   <div class="dialog-actions"><button class="secondary" id="cancelDelete" type="button">取消</button><button class="danger-action" id="confirmDelete" type="button">确认删除</button></div>
 </dialog>
+<dialog class="settings-dialog" id="locationDialog" aria-labelledby="locationDialogTitle" aria-describedby="locationNote">
+  <div class="dialog-head"><h2 id="locationDialogTitle">项目保存位置</h2><button class="dialog-close" id="closeLocationDialog" type="button" aria-label="关闭">×</button></div>
+  <div class="dialog-body">
+    <div class="location-current"><span>当前片库</span><code id="currentProjectsRoot">正在读取…</code><small id="currentProjectsMeta"></small></div>
+    <label class="path-label" for="projectsRootInput">新项目保存到</label>
+    <div class="path-control"><input id="projectsRootInput" type="text" autocomplete="off" spellcheck="false" placeholder="请输入绝对路径"><button class="secondary" id="chooseProjectsRoot" type="button">选择文件夹</button></div>
+    <p class="path-help">可以粘贴绝对路径；不存在的末级文件夹会在保存时创建。</p>
+    <div class="location-note" id="locationNote"><b>旧项目不会被移动或删除</b>切换后，片库会立即显示新位置中的项目。需要查看旧项目时，再切回原来的路径。</div>
+    <p class="setting-status" id="locationStatus" aria-live="polite"></p>
+    <p class="settings-error" id="locationError" role="alert" hidden></p>
+  </div>
+  <div class="dialog-actions settings-actions"><button class="secondary restore-default" id="restoreDefaultRoot" type="button">恢复默认位置</button><div class="settings-actions-group"><button class="secondary" id="cancelLocation" type="button">取消</button><button class="primary save-location" id="saveProjectsRoot" type="button">保存并切换</button></div></div>
+</dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (() => {
   'use strict'
   const $ = (selector) => document.querySelector(selector)
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char])
-  const allowed = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'])
+  const allowed = new Set(['3g2', '3gp', 'avi', 'asf', 'f4v', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mxf', 'ogv', 'rm', 'rmvb', 'ts', 'vob', 'webm', 'wmv'])
   let selectedFile = null
   let polling = null
   let activeProjectId = null
   let projectsCache = []
   let deleteProjectId = null
+  let settingsCache = null
   let toastTimer = null
 
   function formatBytes(bytes) {
@@ -157,11 +172,12 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   function setFile(file) {
     $('#uploadError').classList.remove('visible')
     const extension = file?.name.split('.').pop()?.toLowerCase()
-    if (!file || !allowed.has(extension)) {
+    const isVideoMime = String(file?.type || '').toLowerCase().startsWith('video/')
+    if (!file || (!allowed.has(extension) && !isVideoMime)) {
       selectedFile = null
       $('#dropzone').classList.remove('has-file')
       $('#startUpload').disabled = true
-      if (file) showError('不支持这个文件格式。请选择 MP4、MOV、MKV、AVI、WebM 或 M4V。')
+      if (file) showError('无法识别为视频文件。请选择常见视频格式，或确认文件扩展名和 MIME 类型正确。')
       return
     }
     selectedFile = file
@@ -196,6 +212,98 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     toastTimer = setTimeout(() => element.classList.remove('visible'), 2400)
   }
 
+  function showLocationError(message) {
+    $('#locationError').textContent = message
+    $('#locationError').hidden = false
+  }
+
+  function renderSettings(settings, { preserveInput = false } = {}) {
+    settingsCache = settings
+    const root = String(settings.projects_root || '')
+    const editable = Boolean(settings.editable)
+    const busy = Boolean(settings.busy)
+    $('#currentProjectsRoot').textContent = root || '未设置'
+    $('#currentProjectsMeta').textContent = `${Number(settings.project_count || 0)} 个项目 · 设置保存在本机`
+    $('#openLocationSettings').title = root ? `当前保存位置：${root}` : '设置项目保存位置'
+    if (!preserveInput) $('#projectsRootInput').value = root
+    $('#projectsRootInput').disabled = !editable || busy
+    $('#chooseProjectsRoot').disabled = !editable || busy
+    $('#restoreDefaultRoot').disabled = !editable || busy
+    $('#saveProjectsRoot').disabled = !editable || busy
+    $('#locationStatus').textContent = !editable
+      ? '当前路径由启动参数 --projects-root 锁定。移除该参数并重启后可在这里修改。'
+      : busy
+        ? '有项目正在上传或分析，处理完成后才能切换保存位置。'
+        : '保存后会立即切换片库，后续导入会写入新位置。'
+  }
+
+  async function loadSettings(options = {}) {
+    const response = await fetch('/api/settings', { cache: 'no-store' })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.settings) throw new Error(data.error || `读取设置失败：HTTP ${response.status}`)
+    renderSettings(data.settings, options)
+    return data.settings
+  }
+
+  async function openLocationSettings() {
+    $('#locationError').hidden = true
+    $('#locationError').textContent = ''
+    if (settingsCache) renderSettings(settingsCache)
+    $('#locationDialog').showModal()
+    try { await loadSettings() } catch (error) { showLocationError(error.message || '无法读取保存位置') }
+  }
+
+  async function chooseProjectsRoot() {
+    const button = $('#chooseProjectsRoot')
+    const original = button.textContent
+    button.disabled = true
+    button.textContent = '正在选择…'
+    $('#locationError').hidden = true
+    try {
+      const response = await fetch('/api/settings/select-projects-root', { method: 'POST' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `选择失败：HTTP ${response.status}`)
+      if (!data.cancelled && data.path) {
+        $('#projectsRootInput').value = data.path
+        $('#projectsRootInput').focus()
+      }
+    } catch (error) {
+      showLocationError(error.message || '无法打开文件夹选择器')
+    } finally {
+      button.textContent = original
+      button.disabled = !settingsCache?.editable || Boolean(settingsCache?.busy)
+    }
+  }
+
+  async function saveProjectsRoot() {
+    const path = $('#projectsRootInput').value.trim()
+    if (!path) { showLocationError('保存位置不能为空。'); $('#projectsRootInput').focus(); return }
+    const button = $('#saveProjectsRoot')
+    button.disabled = true
+    button.textContent = '正在切换…'
+    $('#locationError').hidden = true
+    try {
+      const response = await fetch('/api/settings/projects-root', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.settings) throw new Error(data.error || `保存失败：HTTP ${response.status}`)
+      renderSettings(data.settings)
+      activeProjectId = null
+      $('#uploadProgress').classList.remove('visible')
+      $('#locationDialog').close()
+      await loadProjects()
+      toast(data.settings.recovered ? `已切换保存位置，并恢复 ${data.settings.recovered} 个中断项目` : '保存位置已切换，旧项目仍保留在原目录')
+    } catch (error) {
+      showLocationError(error.message || '无法切换保存位置')
+      button.disabled = !settingsCache?.editable || Boolean(settingsCache?.busy)
+    } finally {
+      button.textContent = '保存并切换'
+    }
+  }
+
   function updateMonitor({ title, progress, stage, detail = '' }) {
     const value = Math.max(0, Math.min(100, Number(progress || 0)))
     $('#uploadProgress').classList.add('visible')
@@ -218,14 +326,20 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   }
 
   function statusLabel(status) {
-    return ({ uploading: '上传中', queued: '等待处理', analyzing: '机械分析', building: '建立工作台', ready: '可以审片', failed: '处理失败' })[status] || '等待处理'
+    return ({ uploading: '上传中', queued: '等待处理', analyzing: '机械分析', adapting: '格式适配', building: '建立工作台', ready: '可以审片', failed: '处理失败' })[status] || '等待处理'
+  }
+
+  function adaptationLabel(adaptation) {
+    const method = adaptation?.method
+    return ({ direct: '格式已兼容', remux: '已封装为 MP4', transcode: '已适配为 MP4' })[method] || ''
   }
 
   function projectRow(project) {
     const ready = project.status === 'ready'
     const busy = !['ready', 'failed'].includes(project.status)
     const progress = Math.max(0, Math.min(100, Number(project.progress || 0)))
-    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
+    const adaptation = adaptationLabel(project.format_adaptation)
+    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps${adaptation ? ` · ${adaptation}` : ''}` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
     const error = project.error ? `<p class="error-detail">${escapeHTML(project.error.slice(0, 240))}</p>` : ''
     const href = ready ? `/projects/${encodeURIComponent(project.project_id)}/${project.review_relpath}` : '#'
     const count = Number(project.progress_total || 0)
@@ -346,10 +460,18 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   $('#cancelDelete').addEventListener('click', () => $('#deleteDialog').close())
   $('#confirmDelete').addEventListener('click', deleteProject)
   $('#deleteDialog').addEventListener('close', () => { if (!$('#confirmDelete').disabled) deleteProjectId = null })
+  $('#openLocationSettings').addEventListener('click', openLocationSettings)
+  $('#closeLocationDialog').addEventListener('click', () => $('#locationDialog').close())
+  $('#cancelLocation').addEventListener('click', () => $('#locationDialog').close())
+  $('#chooseProjectsRoot').addEventListener('click', chooseProjectsRoot)
+  $('#restoreDefaultRoot').addEventListener('click', () => { if (settingsCache?.default_projects_root) { $('#projectsRootInput').value = settingsCache.default_projects_root; $('#projectsRootInput').focus() } })
+  $('#saveProjectsRoot').addEventListener('click', saveProjectsRoot)
+  $('#projectsRootInput').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !$('#saveProjectsRoot').disabled) saveProjectsRoot() })
   for (const name of ['dragenter', 'dragover']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.add('dragging') })
   for (const name of ['dragleave', 'drop']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.remove('dragging') })
   dropzone.addEventListener('drop', (event) => setFile(event.dataTransfer?.files?.[0]))
   loadProjects()
+  loadSettings().catch(() => { $('#openLocationSettings').title = '保存位置暂时不可用' })
 })()
 </script>
 </body>
