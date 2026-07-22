@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>拉片超人 · 逐帧审片工作台</title>
 <style>
 :root{
@@ -87,6 +87,34 @@ body[data-view-tone="long-review"] .dialog-actions{background:#eff2f0}
 @media(max-width:680px){:root{--shotbar-height:108px}.topbar{gap:5px}.search-wrap{min-width:92px}.saved-indicator,#theaterBtn{display:none}.stage-toolbar{gap:8px}.transport-help{height:auto;min-height:40px;padding:7px 10px;line-height:1.45}.shotbar{height:var(--shotbar-height);grid-template-columns:1fr;grid-template-rows:auto auto;align-content:center;row-gap:7px}.shotbar-main{grid-column:1;grid-row:1}.shotbar-actions{grid-column:1;grid-row:2;width:100%;margin:0}.learning-mode{max-width:88px;padding-left:5px;padding-right:16px}.shot-action{flex:1;min-height:34px;padding:0 5px}#nextPendingBtn{display:none}.tool-dialog{width:calc(100vw - 12px);max-height:94dvh}.global-dialog{width:calc(100vw - 8px);height:calc(100dvh - 8px);border-radius:7px}.global-content{padding:12px}.dialog-body{padding:13px}.ai-import-source,.backup-import{grid-template-columns:1fr;gap:5px}.ai-preview>div{grid-template-columns:82px minmax(0,1fr)}.ai-preview>div i{display:none}.ai-preview>div p:last-child{grid-column:2}.dialog-actions{padding:9px}.dialog-actions .btn{padding:0 9px}.curve-legend em{width:100%;margin-left:0}.lane-grid{grid-template-columns:108px repeat(var(--shot-count),142px)}.learning-meta{grid-template-columns:1fr}.learning-global{grid-template-columns:repeat(6,110px)}}
 @media(max-width:680px){.inspector.mobile-open{right:0;left:0;width:auto;max-width:none}}
 @media(max-width:360px){.topbar{padding:0 6px;gap:3px}.search-wrap{width:34px;min-width:34px;flex:0 0 34px;margin:0}.search-wrap .search{width:34px;padding:0;color:transparent;cursor:pointer}.search-wrap .search::placeholder{color:transparent}.search-wrap span{left:11px}.search-wrap:focus-within{position:absolute;right:6px;left:37px;z-index:35;width:auto;background:var(--surface)}.search-wrap:focus-within .search{width:100%;padding:0 30px;color:var(--ink);cursor:text}.search-wrap:focus-within .search::placeholder{color:#75807a}.top-action,.icon-btn{padding-right:6px;padding-left:6px;font-size:11px}}
+
+/* Aspect-ratio aware evidence monitor */
+.stage{container-type:inline-size;--source-aspect:1.777778;--source-height-ratio:.5625}
+.stage-toolbar{min-width:0}.media-format{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aeb8b4;font:10px/1.2 ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums}.media-format:before{content:"";display:inline-block;width:5px;height:5px;margin:0 7px 1px 0;border-radius:50%;background:#65726d}
+.media-view{--media-aspect:1.777778;--asset-height-ratio:.5625;height:clamp(300px,calc(100cqw * var(--asset-height-ratio)),620px);min-height:0}
+.media-view>video,.media-view>img{position:absolute;inset:0;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;object-position:center center}.frame-grid img{object-position:center center}
+.media-view[data-mode=dense]{height:clamp(220px,calc(100cqw * var(--asset-height-ratio)),620px)}
+.stage[data-orientation=portrait] .media-view[data-mode=video]{height:clamp(480px,calc(100cqw * var(--source-height-ratio)),760px)}
+.stage[data-orientation=portrait] .media-view[data-mode=compare]{height:clamp(460px,calc(100cqw * var(--asset-height-ratio)),720px)}
+.stage[data-orientation=square] .media-view[data-mode=video],.stage[data-orientation=square] .media-view[data-mode=compare]{height:clamp(380px,calc(100cqw * var(--asset-height-ratio)),650px)}
+.stage[data-orientation=ultrawide] .media-view[data-mode=video]{height:clamp(220px,calc(100cqw * var(--source-height-ratio)),420px)}
+.stage[data-orientation=ultrawide] .media-view[data-mode=compare]{height:clamp(480px,calc(100cqw * var(--asset-height-ratio)),760px)}
+.stage[data-orientation=ultrawide] .frame-grid{grid-template-columns:1fr;grid-template-rows:repeat(3,minmax(0,1fr))}
+.stage[data-orientation=ultrawide] .frame-grid figcaption{bottom:6px}
+@media(max-width:920px){.media-format{max-width:180px}.stage[data-orientation=portrait] .media-view[data-mode=video]{height:clamp(430px,68dvh,680px)}.stage[data-orientation=ultrawide] .media-view[data-mode=compare]{height:clamp(420px,66dvh,680px)}}
+@media(max-width:680px){
+  .media-format{order:4;width:100%;max-width:none;margin-left:auto;color:#98a39f;text-align:right}.media-format:before{display:none}
+  .stage-toolbar{height:auto;min-height:48px;flex-wrap:wrap;padding:5px 9px}.stage-toolbar .grow{display:none}
+  .media-view{height:clamp(240px,calc(100cqw * var(--asset-height-ratio)),520px)}
+  .stage[data-orientation=portrait] .media-view[data-mode=video]{height:clamp(360px,68dvh,640px)}
+  .stage[data-orientation=square] .media-view[data-mode=video]{height:clamp(320px,58dvh,560px)}
+  .stage[data-orientation=ultrawide] .media-view[data-mode=video]{height:clamp(190px,34dvh,320px)}
+  .media-view[data-mode=compare]{height:auto!important;overflow:visible}
+  .frame-grid,.stage[data-orientation=ultrawide] .frame-grid{height:auto;grid-template-columns:1fr;grid-template-rows:none}
+  .frame-grid figure{width:100%;height:auto;min-height:0;aspect-ratio:var(--source-aspect)}
+  .stage[data-orientation=portrait] .frame-grid figure{min-height:420px}
+  .stage[data-orientation=ultrawide] .frame-grid figure{height:150px;aspect-ratio:auto}
+}
 @media(prefers-reduced-motion:reduce){.diagnostic-item,.export-option,.shot-action,.lane-head,.lane-cell{transition:none!important}}
 
 </style>
@@ -135,6 +163,7 @@ body[data-view-tone="long-review"] .dialog-actions{background:#eff2f0}
             <button class="media-tab on" data-media="video">视频片段</button>
             <button class="media-tab" data-media="dense">逐帧接触表</button>
             <button class="media-tab" data-media="compare">首中尾对照</button>
+            <span class="media-format" id="mediaFormat">画幅识别中</span>
             <div class="grow"></div>
             <button class="stage-tool" id="playbackRate">0.5×</button>
             <button class="stage-tool" id="muteBtn">原音</button>

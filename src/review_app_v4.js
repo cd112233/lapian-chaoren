@@ -18,7 +18,7 @@
     timeline_beats: '动作分拍', force_contact_response: '力 / 接触 / 响应', performance_intent: '表演', camera_position: '机位', camera_motion: '运镜',
     lens_fov: '焦段 / FOV', focus_depth: '焦点 / 景深', composition_editing: '构图 / 剪辑', vfx_layers_timing: 'VFX 层与时序',
     interactive_lighting: '交互光', environment_response: '环境响应', sound_beats: '声音 / 剪辑节拍', end_state: '结束状态', next_shot_bridge: '下一镜桥接',
-    often_missed: '最容易漏写', uncertainties: '不确定项', rebuild_route: '建议重制路线', source_fidelity_vs_adaptation: '原片忠实度与目标适配',
+    often_missed: '最容易漏写', uncertainties: '不确定项', rebuild_route: '建议重制路线', source_fidelity_vs_adaptation: '原片忠实度与妖怪适配',
   }
   const EDITABLE_FIELDS = ['title', 'analysis_confidence', ...Object.keys(FIELD_LABELS)]
   const LEARNING_FIELDS = [
@@ -63,8 +63,58 @@
   const $$ = (selector) => [...document.querySelectorAll(selector)]
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char])
   const truncate = (value, length = 112) => { const text = String(value ?? ''); return text.length > length ? `${text.slice(0, length)}…` : text }
+  const MEDIA_ORIENTATIONS = new Set(['portrait', 'square', 'landscape', 'ultrawide'])
+  const MEDIA_ORIENTATION_LABELS = { portrait: '竖屏', square: '方屏', landscape: '横屏', ultrawide: '超宽屏' }
   const readJSON = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback } catch { return fallback } }
   const writeJSON = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); return true } catch { return false } }
+
+  function greatestCommonDivisor(a, b) {
+    let x = Math.abs(Math.round(a))
+    let y = Math.abs(Math.round(b))
+    while (y) [x, y] = [y, x % y]
+    return x || 1
+  }
+
+  function inferOrientation(width, height) {
+    if (!(width > 0 && height > 0)) return 'landscape'
+    const ratio = width / height
+    if (ratio >= 0.94 && ratio <= 1.06) return 'square'
+    if (ratio < 0.94) return 'portrait'
+    if (ratio >= 2.1) return 'ultrawide'
+    return 'landscape'
+  }
+
+  function readableAspectLabel(width, height, fallback = '') {
+    if (!(width > 0 && height > 0)) return fallback || '画幅待识别'
+    const ratio = width / height
+    const common = [
+      [32 / 9, '32:9'], [2.39, '2.39:1'], [21 / 9, '21:9'], [16 / 9, '16:9'], [4 / 3, '4:3'],
+      [1, '1:1'], [3 / 4, '3:4'], [9 / 16, '9:16'], [9 / 21, '9:21'], [9 / 32, '9:32'],
+    ]
+    const matched = common.find(([value]) => Math.abs(ratio - value) / value < 0.012)
+    if (matched) return matched[1]
+    const divisor = greatestCommonDivisor(width, height)
+    const numerator = Math.round(width / divisor)
+    const denominator = Math.round(height / divisor)
+    return numerator <= 100 && denominator <= 100 ? `${numerator}:${denominator}` : `${ratio.toFixed(2)}:1`
+  }
+
+  function geometryFromDimensions(width, height, overrides = {}) {
+    const resolvedWidth = Math.max(0, Math.round(Number(width) || 0))
+    const resolvedHeight = Math.max(0, Math.round(Number(height) || 0))
+    const known = resolvedWidth > 0 && resolvedHeight > 0
+    const ratio = known ? resolvedWidth / resolvedHeight : Math.max(0.01, Number(overrides.ratio) || 16 / 9)
+    const orientation = MEDIA_ORIENTATIONS.has(overrides.orientation) ? overrides.orientation : inferOrientation(resolvedWidth || ratio * 1000, resolvedHeight || 1000)
+    return {
+      width: resolvedWidth,
+      height: resolvedHeight,
+      ratio,
+      heightRatio: 1 / ratio,
+      orientation,
+      aspectLabel: readableAspectLabel(resolvedWidth, resolvedHeight, overrides.aspectLabel || ''),
+      known,
+    }
+  }
   const firstShotId = SHOTS[0]?.shot_id || 'SH001'
   let review = readJSON(STORAGE_KEY, { schemaVersion: 5, shots: {}, knowledge: { cards: [] }, replications: {}, lastShot: firstShotId, savedAt: null })
   if (!review || typeof review !== 'object') review = { schemaVersion: 5, shots: {}, knowledge: { cards: [] }, replications: {}, lastShot: firstShotId, savedAt: null }
@@ -93,6 +143,11 @@
   let advisorRuntime = { loading: false, shotId: null, liveText: '', controller: null, provider: '', model: '', imageCount: 0, error: '' }
   let initialRuntime = { loading: false, shotId: null, error: '' }
   let replicationObjectUrl = ''
+  let sourceGeometry = geometryFromDimensions(PROJECT.frame_width, PROJECT.frame_height, {
+    ratio: PROJECT.display_aspect_ratio,
+    orientation: PROJECT.orientation,
+    aspectLabel: PROJECT.aspect_ratio_label,
+  })
 
   const rawShot = (id) => SHOTS.find((shot) => shot.shot_id === id) || SHOTS[0]
   const reviewFor = (id) => {
@@ -170,6 +225,63 @@
     $('#viewTone').value = settings.viewTone
     $('#aiEnabled').value = settings.aiEnabled ? 'true' : 'false'
     $('#learningMode').value = settings.learningMode
+  }
+
+  function setSourceGeometry(width, height, overrides = {}) {
+    sourceGeometry = geometryFromDimensions(width, height, {
+      ratio: overrides.ratio || PROJECT.display_aspect_ratio,
+      orientation: overrides.orientation || PROJECT.orientation,
+      aspectLabel: overrides.aspectLabel || PROJECT.aspect_ratio_label,
+    })
+    const stage = $('.stage')
+    if (!stage) return sourceGeometry
+    stage.dataset.orientation = sourceGeometry.orientation
+    stage.style.setProperty('--source-aspect', String(sourceGeometry.ratio))
+    stage.style.setProperty('--source-height-ratio', String(sourceGeometry.heightRatio))
+    document.body.dataset.orientation = sourceGeometry.orientation
+    const mediaFormat = $('#mediaFormat')
+    if (mediaFormat) {
+      const dimensions = sourceGeometry.known ? `${sourceGeometry.width}×${sourceGeometry.height}` : '尺寸待识别'
+      mediaFormat.textContent = `${MEDIA_ORIENTATION_LABELS[sourceGeometry.orientation]} · ${sourceGeometry.aspectLabel} · ${dimensions}`
+      mediaFormat.title = Number(PROJECT.rotation_deg || 0) ? `原片包含 ${Number(PROJECT.rotation_deg)}° 方向元数据，播放与抽帧已按显示方向处理。` : '当前片源的显示画幅；监看、接触表和对照帧均保留完整边缘。'
+    }
+    return sourceGeometry
+  }
+
+  function setMediaGeometry(width, height, { updateSource = false, mode = mediaMode } = {}) {
+    const geometry = geometryFromDimensions(width, height, {
+      ratio: sourceGeometry.ratio,
+      orientation: sourceGeometry.orientation,
+      aspectLabel: sourceGeometry.aspectLabel,
+    })
+    if (updateSource && geometry.known) setSourceGeometry(geometry.width, geometry.height)
+    const view = $('#mediaView')
+    const stage = $('.stage')
+    if (!view || !stage) return geometry
+    let layoutHeightRatio = geometry.heightRatio
+    if (mode === 'compare') {
+      layoutHeightRatio = sourceGeometry.orientation === 'ultrawide'
+        ? sourceGeometry.heightRatio * 3
+        : sourceGeometry.heightRatio / 3
+    }
+    view.dataset.mode = mode
+    view.dataset.orientation = sourceGeometry.orientation
+    view.dataset.assetOrientation = geometry.orientation
+    view.style.setProperty('--media-aspect', String(geometry.ratio))
+    view.style.setProperty('--asset-height-ratio', String(Math.max(0.05, layoutHeightRatio)))
+    stage.dataset.mode = mode
+    return geometry
+  }
+
+  function inferSourceGeometryFromFrame(path, shotId) {
+    if (sourceGeometry.known || !path) return
+    const image = new Image()
+    image.addEventListener('load', () => {
+      if (selectedId !== shotId) return
+      setSourceGeometry(image.naturalWidth, image.naturalHeight)
+      if (mediaMode === 'compare') setMediaGeometry(image.naturalWidth, image.naturalHeight, { mode: 'compare' })
+    }, { once: true })
+    image.src = path
   }
 
   function fieldCompleteness(shot) {
@@ -311,15 +423,31 @@
       button.classList.toggle('on', button.dataset.media === mediaMode)
       if (button.dataset.media === 'video') button.disabled = !shot.clip
     })
+    setSourceGeometry(sourceGeometry.width, sourceGeometry.height, sourceGeometry)
+    inferSourceGeometryFromFrame(shot.middle_frame, shot.shot_id)
     if (mediaMode === 'video') {
       view.innerHTML = `<video id="reviewVideo" controls preload="metadata" poster="${escapeHTML(shot.middle_frame)}" src="${escapeHTML(shot.clip)}"></video>`
       const video = $('#reviewVideo')
       video.playbackRate = Number($('#playbackRate').textContent.replace('×', '')) || 0.5
       video.muted = $('#muteBtn').textContent === '静音'
+      setMediaGeometry(sourceGeometry.width, sourceGeometry.height, { mode: 'video' })
+      video.addEventListener('loadedmetadata', () => {
+        setMediaGeometry(video.videoWidth, video.videoHeight, { updateSource: true, mode: 'video' })
+      }, { once: true })
     } else if (mediaMode === 'dense') {
       view.innerHTML = `<img src="${escapeHTML(shot.dense_contact_sheet)}" alt="${shot.shot_id} 逐帧接触表"><a class="sheet-link" target="_blank" href="${escapeHTML(shot.dense_contact_sheet)}">查看原图 ↗</a>`
+      const image = view.querySelector('img')
+      setMediaGeometry(sourceGeometry.width, sourceGeometry.height, { mode: 'dense' })
+      image.addEventListener('load', () => {
+        setMediaGeometry(image.naturalWidth, image.naturalHeight, { mode: 'dense' })
+      }, { once: true })
     } else {
       view.innerHTML = `<div class="frame-grid"><figure><img src="${escapeHTML(shot.start_frame)}" alt="首帧"><figcaption>首帧 · F${String(shot.source_in_frame).padStart(4, '0')}</figcaption></figure><figure><img src="${escapeHTML(shot.middle_frame)}" alt="中间帧"><figcaption>中间帧</figcaption></figure><figure><img src="${escapeHTML(shot.end_frame)}" alt="尾帧"><figcaption>尾帧 · F${String(Math.max(shot.source_in_frame, shot.source_out_frame - 1)).padStart(4, '0')}</figcaption></figure></div>`
+      const image = view.querySelector('img')
+      setMediaGeometry(sourceGeometry.width, sourceGeometry.height, { mode: 'compare' })
+      image.addEventListener('load', () => {
+        setMediaGeometry(image.naturalWidth, image.naturalHeight, { updateSource: !sourceGeometry.known, mode: 'compare' })
+      }, { once: true })
     }
   }
 
@@ -887,7 +1015,7 @@
     const scores = REPLICATION_CRITERIA.map(([key, label]) => `<span>${label}</span><select data-replication-score="${key}" aria-label="${label}评分">${scoreOptions(replication.scores[key])}</select>`).join('')
     const preview = replicationObjectUrl ? `<video class="replication-preview" src="${replicationObjectUrl}" controls preload="metadata"></video>` : ''
     const resultMeta = result ? `<p>${escapeHTML(result.name)} · ${(Number(result.size || 0) / 1024 / 1024).toFixed(1)} MB${replication.completedAt ? ' · 已完成评估' : ''}</p>` : '<p>尚未选择复刻结果。</p>'
-    return `<div class="replication-panel"><h3>代表镜头复刻验证</h3><p>复刻用于检查拉片结论是否足以指导动作、摄影机、VFX、角色身份和连续性。</p><div class="replication-source"><b>${escapeHTML(shot.shot_id)} · 必须保留的动作因果</b><p>${escapeHTML(shot.force_contact_response || '当前动作因果尚未形成最终结论。')}</p></div><div class="replication-form"><label for="replicationTarget">目标角色与场景替换</label><textarea id="replicationTarget" placeholder="目标角色的身份、能力、惯用侧和场景替换规则…">${escapeHTML(replication.target || '')}</textarea><label for="replicationTaskNotes">本镜制作补充</label><textarea id="replicationTaskNotes" placeholder="只填写目标适配，不要改写原片事实…">${escapeHTML(replication.taskNotes || '')}</textarea><label for="replicationFile">复刻结果</label><div class="replication-file"><input id="replicationFile" type="file" accept="video/*">${resultMeta}${preview}</div><label>分项评分</label><div class="score-grid">${scores}</div><label for="replicationNotes">失败原因与通过依据</label><textarea id="replicationNotes" placeholder="指出偏差发生在哪个动作阶段、摄影机变化或特效时序…">${escapeHTML(replication.notes || '')}</textarea></div><div class="replication-actions"><button type="button" class="btn" id="exportReplicationTask">导出本镜任务</button><button type="button" class="btn primary" id="saveReplication">完成评估</button><button type="button" class="btn" id="promoteReplication">沉淀失败经验</button></div></div>`
+    return `<div class="replication-panel"><h3>代表镜头复刻验证</h3><p>复刻用于检查拉片结论是否足以指导动作、摄影机、VFX、角色身份和连续性。</p><div class="replication-source"><b>${escapeHTML(shot.shot_id)} · 必须保留的动作因果</b><p>${escapeHTML(shot.force_contact_response || '当前动作因果尚未形成最终结论。')}</p></div><div class="replication-form"><label for="replicationTarget">目标角色与场景替换</label><textarea id="replicationTarget" placeholder="两个妖怪的身份、能力、惯用手和场景替换规则…">${escapeHTML(replication.target || '')}</textarea><label for="replicationTaskNotes">本镜制作补充</label><textarea id="replicationTaskNotes" placeholder="只填写目标适配，不要改写原片事实…">${escapeHTML(replication.taskNotes || '')}</textarea><label for="replicationFile">复刻结果</label><div class="replication-file"><input id="replicationFile" type="file" accept="video/*">${resultMeta}${preview}</div><label>分项评分</label><div class="score-grid">${scores}</div><label for="replicationNotes">失败原因与通过依据</label><textarea id="replicationNotes" placeholder="指出偏差发生在哪个动作阶段、摄影机变化或特效时序…">${escapeHTML(replication.notes || '')}</textarea></div><div class="replication-actions"><button type="button" class="btn" id="exportReplicationTask">导出本镜任务</button><button type="button" class="btn primary" id="saveReplication">完成评估</button><button type="button" class="btn" id="promoteReplication">沉淀失败经验</button></div></div>`
   }
 
   function bindReplicationPanel(shot) {
@@ -1429,6 +1557,7 @@
   $('#projectName').title = projectTitle
   document.title = `${APP_NAME} · ${projectTitle} · ${SHOTS.length} 镜`
   applySettings()
+  setSourceGeometry(sourceGeometry.width, sourceGeometry.height, sourceGeometry)
   updateCounts()
   updateSavedIndicator()
   renderList()

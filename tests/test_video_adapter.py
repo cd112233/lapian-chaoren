@@ -96,6 +96,59 @@ class VideoAdapterTests(unittest.TestCase):
         self.assertIn("libx264", calls[0])
         self.assertIn("yuv420p", calls[0])
         self.assertIn("aac", calls[0])
+        self.assertIn("scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1", calls[0])
+
+    def test_rotation_metadata_uses_display_geometry_and_forces_transcode(self) -> None:
+        probe = self.probe(
+            format_name="mov,mp4,m4a,3gp,3g2,mj2",
+            width=640,
+            height=360,
+            rotation_deg=90,
+        )
+        self.assertEqual(probe.display_width, 360)
+        self.assertEqual(probe.display_height, 640)
+        self.assertEqual(probe.orientation, "portrait")
+        self.assertEqual(probe.aspect_ratio_label, "9:16")
+        self.assertFalse(probe.direct_compatible)
+
+        calls = []
+
+        def fake_run(command, *, duration_sec, on_progress):
+            calls.append(command)
+            Path(command[-1]).write_bytes(b"rotation-baked")
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "rotated.mp4"
+            output = Path(directory) / "analysis_source.mp4"
+            source.write_bytes(b"source")
+            with patch.object(video_adapter, "probe_video", return_value=probe), patch.object(
+                video_adapter, "_run_ffmpeg", side_effect=fake_run
+            ):
+                result = video_adapter.adapt_video(source, output)
+
+        self.assertEqual(result.method, "transcode")
+        self.assertNotIn("copy", calls[0])
+        self.assertIn("rotate=0", calls[0])
+        self.assertEqual(result.manifest()["display_width"], 360)
+        self.assertEqual(result.manifest()["orientation"], "portrait")
+
+    def test_probe_reads_display_matrix_rotation(self) -> None:
+        payload = """{
+          "streams": [{
+            "codec_type": "video", "codec_name": "h264", "pix_fmt": "yuv420p",
+            "width": 640, "height": 360, "avg_frame_rate": "24/1",
+            "side_data_list": [{"side_data_type": "Display Matrix", "rotation": 90}]
+          }],
+          "format": {"format_name": "mov,mp4", "duration": "1.0"}
+        }"""
+        completed = type("Completed", (), {"returncode": 0, "stdout": payload, "stderr": ""})()
+        with patch.object(video_adapter.subprocess, "run", return_value=completed), patch.object(
+            video_adapter, "_require_binary"
+        ):
+            probe = video_adapter.probe_video(Path("/tmp/rotated.mp4"))
+
+        self.assertEqual(probe.rotation_deg, 90)
+        self.assertEqual((probe.display_width, probe.display_height), (360, 640))
 
     def test_probe_rejects_a_file_without_a_video_stream(self) -> None:
         payload = '{"streams":[{"codec_type":"audio"}],"format":{}}'

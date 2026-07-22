@@ -65,6 +65,7 @@ class VideoProbe:
     video_codec: str
     pixel_format: str
     audio_codec: str | None
+    rotation_deg: int = 0
 
     @property
     def format_tokens(self) -> set[str]:
@@ -79,14 +80,47 @@ class VideoProbe:
         )
 
     @property
+    def requires_rotation_bake(self) -> bool:
+        return self.rotation_deg % 360 != 0
+
+    @property
     def direct_compatible(self) -> bool:
-        return self.stream_compatible and bool(self.format_tokens & {"mp4", "mov"})
+        return (
+            self.stream_compatible
+            and not self.requires_rotation_bake
+            and bool(self.format_tokens & {"mp4", "mov"})
+        )
+
+    @property
+    def display_width(self) -> int:
+        return self.height if self.rotation_deg in {90, 270} else self.width
+
+    @property
+    def display_height(self) -> int:
+        return self.width if self.rotation_deg in {90, 270} else self.height
+
+    @property
+    def display_aspect_ratio(self) -> float:
+        if self.display_height <= 0:
+            return 0.0
+        return self.display_width / self.display_height
+
+    @property
+    def aspect_ratio_label(self) -> str:
+        return aspect_ratio_label(self.display_width, self.display_height)
+
+    @property
+    def orientation(self) -> str:
+        return classify_orientation(self.display_width, self.display_height)
 
     @property
     def summary(self) -> str:
         container = next(iter(self.format_tokens), "未知容器")
         audio = self.audio_codec or "无音频"
-        return f"{container} · {self.video_codec} · {audio} · {self.width}x{self.height}"
+        return (
+            f"{container} · {self.video_codec} · {audio} · "
+            f"{self.display_width}x{self.display_height} · {self.aspect_ratio_label}"
+        )
 
 
 @dataclass(frozen=True)
@@ -106,6 +140,14 @@ class AdaptationResult:
             "input_video_codec": self.input_probe.video_codec,
             "input_pixel_format": self.input_probe.pixel_format,
             "input_audio_codec": self.input_probe.audio_codec,
+            "input_width": self.input_probe.width,
+            "input_height": self.input_probe.height,
+            "input_rotation_deg": self.input_probe.rotation_deg,
+            "display_width": self.input_probe.display_width,
+            "display_height": self.input_probe.display_height,
+            "display_aspect_ratio": round(self.input_probe.display_aspect_ratio, 6),
+            "aspect_ratio_label": self.input_probe.aspect_ratio_label,
+            "orientation": self.input_probe.orientation,
             "analysis_filename": self.analysis_path.name,
             "preserved_original": True,
         }
@@ -121,6 +163,63 @@ def _parse_rate(value: Any) -> float:
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+
+def normalize_rotation(value: Any) -> int:
+    """Normalize FFprobe rotation metadata to 0/90/180/270 degrees."""
+
+    try:
+        degrees = int(round(float(value)))
+    except (TypeError, ValueError):
+        return 0
+    normalized = degrees % 360
+    candidates = (0, 90, 180, 270)
+
+    def circular_distance(item: int) -> int:
+        return min((normalized - item) % 360, (item - normalized) % 360)
+
+    snapped = min(candidates, key=circular_distance)
+    return snapped if circular_distance(snapped) <= 2 else normalized
+
+
+def rotation_from_stream(stream: dict[str, Any]) -> int:
+    tags = stream.get("tags")
+    if isinstance(tags, dict) and tags.get("rotate") not in (None, ""):
+        rotation = normalize_rotation(tags.get("rotate"))
+        if rotation:
+            return rotation
+    side_data = stream.get("side_data_list")
+    if isinstance(side_data, list):
+        for item in side_data:
+            if not isinstance(item, dict) or item.get("rotation") in (None, ""):
+                continue
+            rotation = normalize_rotation(item.get("rotation"))
+            if rotation:
+                return rotation
+    return 0
+
+
+def classify_orientation(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "landscape"
+    ratio = width / height
+    if 0.94 <= ratio <= 1.06:
+        return "square"
+    if ratio < 0.94:
+        return "portrait"
+    if ratio >= 2.1:
+        return "ultrawide"
+    return "landscape"
+
+
+def aspect_ratio_label(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "未知画幅"
+    ratio = Fraction(width, height)
+    if ratio.numerator <= 100 and ratio.denominator <= 100:
+        return f"{ratio.numerator}:{ratio.denominator}"
+    limited = Fraction(width / height).limit_denominator(32)
+    return f"{limited.numerator}:{limited.denominator}"
 
 
 def _require_binary(name: str) -> None:
@@ -182,7 +281,36 @@ def probe_video(path: Path) -> VideoProbe:
             if isinstance(audio, dict) and audio.get("codec_name")
             else None
         ),
+        rotation_deg=rotation_from_stream(video),
     )
+
+
+def _transcode_command(base: list[str], temporary: Path) -> list[str]:
+    return [
+        *base,
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1",
+        "-metadata:s:v:0",
+        "rotate=0",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        str(temporary),
+    ]
 
 
 def _run_ffmpeg(
@@ -289,7 +417,10 @@ def adapt_video(
         "-map",
         "0:a?",
     ]
-    copy_possible = probe.stream_compatible
+    # A rotation tag changes the displayed geometry without changing the coded
+    # width/height.  Remuxing would preserve that ambiguity, so bake the
+    # orientation into pixels before the analysis pipeline sees the file.
+    copy_possible = probe.stream_compatible and not probe.requires_rotation_bake
     if copy_possible:
         command = [
             *base,
@@ -305,29 +436,13 @@ def adapt_video(
         method = "remux"
         reason = "视频流已兼容，仅将原容器重新封装为 MP4。"
     else:
-        command = [
-            *base,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "18",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-            str(temporary),
-        ]
+        command = _transcode_command(base, temporary)
         method = "transcode"
-        reason = "容器或编码不适合直接分析，已转为 H.264/AAC/yuv420p MP4。"
+        reason = (
+            "视频方向元数据已烘焙并转为方形像素 H.264/AAC MP4。"
+            if probe.requires_rotation_bake
+            else "容器或编码不适合直接分析，已转为方形像素 H.264/AAC/yuv420p MP4。"
+        )
     try:
         try:
             _run_ffmpeg(command, duration_sec=probe.duration_sec, on_progress=on_progress)
@@ -338,29 +453,9 @@ def adapt_video(
             # stream-compatible but cannot be safely remuxed. Fall back to a
             # real transcode instead of making the user choose a setting.
             temporary.unlink(missing_ok=True)
-            command = [
-                *base,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "18",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                "-movflags",
-                "+faststart",
-                "-progress",
-                "pipe:1",
-                "-nostats",
-                str(temporary),
-            ]
+            command = _transcode_command(base, temporary)
             method = "transcode"
-            reason = "原容器无法安全封装，已自动转为 H.264/AAC/yuv420p MP4。"
+            reason = "原容器无法安全封装，已自动转为方形像素 H.264/AAC/yuv420p MP4。"
             _run_ffmpeg(command, duration_sec=probe.duration_sec, on_progress=on_progress)
         if not temporary.is_file() or temporary.stat().st_size == 0:
             raise VideoAdaptationError("视频适配没有生成有效的 MP4 文件。")

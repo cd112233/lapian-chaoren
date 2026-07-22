@@ -61,7 +61,20 @@ class LearningProjectTests(unittest.TestCase):
                     }
                 )
             (analysis / "metadata.json").write_text(
-                json.dumps({"probe": {"duration_sec": 1.5, "fps": 24}}),
+                json.dumps(
+                    {
+                        "probe": {
+                            "duration_sec": 1.5,
+                            "fps": 24,
+                            "display_width": 1080,
+                            "display_height": 1920,
+                            "display_aspect_ratio": 0.5625,
+                            "aspect_ratio_label": "9:16",
+                            "orientation": "portrait",
+                            "rotation_deg": 0,
+                        }
+                    }
+                ),
                 encoding="utf-8",
             )
             output = analysis / "learning_shots.yaml"
@@ -79,6 +92,10 @@ class LearningProjectTests(unittest.TestCase):
         self.assertEqual(payload["project"]["shot_count"], 1)
         self.assertEqual(payload["project"]["storage_scope"], "20260721-120000-deadbeef")
         self.assertEqual(payload["project"]["advisor_asset_prefix"], "20260721-120000-deadbeef/analysis")
+        self.assertEqual(payload["project"]["frame_width"], 1080)
+        self.assertEqual(payload["project"]["frame_height"], 1920)
+        self.assertEqual(payload["project"]["orientation"], "portrait")
+        self.assertEqual(payload["project"]["aspect_ratio_label"], "9:16")
         shot = payload["shots"][0]
         self.assertEqual(shot["shot_id"], "SH001")
         self.assertEqual(shot["dense_contact_sheet"], "shots/SH001/contact_sheet.jpg")

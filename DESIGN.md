@@ -46,3 +46,5 @@ Use 150–200ms state transitions only where they clarify selection, progress or
 ## Responsive Behavior
 
 Desktop preserves the three-column review layout. Medium widths hide the inspector behind a deliberate review control. Mobile removes the shot rail, uses a two-row shot toolbar and presents review/learning panels as full-height surfaces. Text and controls must never overlap or depend on hover.
+
+Media geometry is evidence, not decoration. Portrait, square, landscape and ultrawide sources use orientation-specific monitor heights. Direct media is always constrained to the monitor with `object-fit: contain`; contact sheets use letterboxing instead of crop. Ultrawide start/middle/end comparison stacks vertically on desktop, while narrow screens use a natural single-column document flow so every frame remains complete and scrollable.

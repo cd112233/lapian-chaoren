@@ -385,6 +385,8 @@ def process_project(store: ProjectStore, project_id: str) -> None:
         metadata = json.loads((analysis_root / "metadata.json").read_text(encoding="utf-8"))
         probe = metadata.get("probe", {})
         detection = metadata.get("detection", {})
+        frame_width = int(probe.get("display_width") or probe.get("width") or 0)
+        frame_height = int(probe.get("display_height") or probe.get("height") or 0)
         store.update(
             project_id,
             status="ready",
@@ -397,6 +399,12 @@ def process_project(store: ProjectStore, project_id: str) -> None:
             shot_count=int(detection.get("shot_count") or 0),
             duration_sec=float(probe.get("duration_sec") or 0),
             fps=float(probe.get("fps") or 0),
+            frame_width=frame_width,
+            frame_height=frame_height,
+            display_aspect_ratio=float(probe.get("display_aspect_ratio") or 0),
+            aspect_ratio_label=str(probe.get("aspect_ratio_label") or ""),
+            orientation=str(probe.get("orientation") or "landscape"),
+            rotation_deg=int(probe.get("rotation_deg") or 0),
             review_relpath="analysis/review.html",
             learning_yaml_relpath="analysis/learning_shots.yaml",
             completed_at=utc_now(),

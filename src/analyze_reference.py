@@ -24,6 +24,8 @@ from typing import Any, Iterable
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import yaml
 
+from video_adapter import aspect_ratio_label, classify_orientation, rotation_from_stream
+
 try:
     from scenedetect import SceneDetector, SceneManager, open_video
     from scenedetect.detectors import AdaptiveDetector, ContentDetector
@@ -113,6 +115,12 @@ class ProbeInfo:
     pixel_format: str
     audio_codec: str | None
     sample_rate: int | None
+    rotation_deg: int
+    display_width: int
+    display_height: int
+    display_aspect_ratio: float
+    aspect_ratio_label: str
+    orientation: str
 
 
 @dataclass(frozen=True)
@@ -267,17 +275,27 @@ def probe_video(path: Path) -> ProbeInfo:
     frames_raw = video.get("nb_frames")
     frame_count = int(frames_raw) if frames_raw and str(frames_raw).isdigit() else int(round(duration * fps))
     sample_rate_raw = audio.get("sample_rate") if audio else None
+    width = int(video.get("width") or 0)
+    height = int(video.get("height") or 0)
+    rotation_deg = rotation_from_stream(video)
+    display_width, display_height = (height, width) if rotation_deg in {90, 270} else (width, height)
     return ProbeInfo(
         path=str(path.resolve()),
         duration_sec=duration,
         fps=fps,
-        width=int(video.get("width") or 0),
-        height=int(video.get("height") or 0),
+        width=width,
+        height=height,
         frame_count=frame_count,
         video_codec=str(video.get("codec_name") or "unknown"),
         pixel_format=str(video.get("pix_fmt") or "unknown"),
         audio_codec=str(audio.get("codec_name")) if audio else None,
         sample_rate=int(sample_rate_raw) if sample_rate_raw and str(sample_rate_raw).isdigit() else None,
+        rotation_deg=rotation_deg,
+        display_width=display_width,
+        display_height=display_height,
+        display_aspect_ratio=(display_width / display_height) if display_height else 0.0,
+        aspect_ratio_label=aspect_ratio_label(display_width, display_height),
+        orientation=classify_orientation(display_width, display_height),
     )
 
 
@@ -360,7 +378,7 @@ def safe_sample_times(shot: Shot) -> tuple[float, float, float]:
 
 def extract_frame(video_path: Path, timestamp: float, output_path: Path, width: int) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    vf = f"scale='min({width},iw)':-2"
+    vf = f"scale='min({width},iw)':-2,setsar=1"
     run(
         [
             "ffmpeg",
@@ -410,6 +428,10 @@ def split_clip(video_path: Path, shot: Shot, output_path: Path) -> None:
             "18",
             "-pix_fmt",
             "yuv420p",
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1",
+            "-metadata:s:v:0",
+            "rotate=0",
             "-c:a",
             "aac",
             "-b:a",
@@ -436,8 +458,71 @@ def font(size: int = 18) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def fit_image(image: Image.Image, size: tuple[int, int]) -> Image.Image:
-    return ImageOps.fit(image.convert("RGB"), size, method=Image.Resampling.LANCZOS)
+def contain_image(
+    image: Image.Image,
+    size: tuple[int, int],
+    *,
+    background: tuple[int, int, int] = (5, 7, 7),
+) -> Image.Image:
+    """Letterbox an image into *size* without discarding any visual evidence."""
+
+    canvas = Image.new("RGB", size, background)
+    contained = ImageOps.contain(image.convert("RGB"), size, method=Image.Resampling.LANCZOS)
+    x = (size[0] - contained.width) // 2
+    y = (size[1] - contained.height) // 2
+    canvas.paste(contained, (x, y))
+    return canvas
+
+
+def shot_contact_tile_size(
+    image_size: tuple[int, int],
+    *,
+    base_width: int = 480,
+) -> tuple[int, int]:
+    width, height = image_size
+    orientation = classify_orientation(width, height)
+    aspect = width / height if height else 16 / 9
+    scale = max(0.25, base_width / 480)
+    if orientation == "portrait":
+        tile_width = max(180, round(360 * scale))
+        natural_height = round(tile_width / max(aspect, 0.01))
+        tile_height = max(round(480 * scale), min(round(720 * scale), natural_height))
+    elif orientation == "square":
+        tile_width = max(220, round(440 * scale))
+        tile_height = tile_width
+    elif orientation == "ultrawide":
+        tile_width = max(320, round(640 * scale))
+        natural_height = round(tile_width / max(aspect, 0.01))
+        tile_height = max(round(220 * scale), min(round(300 * scale), natural_height))
+    else:
+        tile_width = max(240, round(480 * scale))
+        natural_height = round(tile_width / max(aspect, 0.01))
+        tile_height = max(round(240 * scale), min(round(360 * scale), natural_height))
+    return tile_width, tile_height
+
+
+def overview_layout(
+    image_size: tuple[int, int],
+    *,
+    columns: int | None = None,
+    tile_width: int | None = None,
+) -> tuple[int, int, int]:
+    width, height = image_size
+    orientation = classify_orientation(width, height)
+    aspect = width / height if height else 16 / 9
+    defaults = {
+        "portrait": (6, 240, 320, 460),
+        "square": (5, 300, 280, 320),
+        "ultrawide": (4, 520, 180, 240),
+        "landscape": (4, 400, 220, 320),
+    }
+    default_columns, default_width, min_height, max_height = defaults[orientation]
+    resolved_columns = columns or default_columns
+    resolved_width = tile_width or default_width
+    scale = resolved_width / default_width
+    natural_height = round(resolved_width / max(aspect, 0.01))
+    resolved_height = max(round(min_height * scale), min(round(max_height * scale), natural_height))
+    return resolved_columns, resolved_width, resolved_height
 
 
 def make_shot_contact_sheet(
@@ -448,15 +533,14 @@ def make_shot_contact_sheet(
     tile_width: int = 480,
 ) -> None:
     images = [Image.open(path) for path in frame_paths]
-    ratio = images[0].height / images[0].width if images[0].width else 9 / 16
-    tile_height = max(240, int(tile_width * ratio))
+    tile_width, tile_height = shot_contact_tile_size(images[0].size, base_width=tile_width)
     header_h = 58
     canvas = Image.new("RGB", (tile_width * 3, tile_height + header_h), (22, 22, 22))
     draw = ImageDraw.Draw(canvas)
     fnt = font(18)
     labels = ["START", "MIDDLE", "END"]
     for idx, (image, label) in enumerate(zip(images, labels)):
-        tile = fit_image(image, (tile_width, tile_height))
+        tile = contain_image(image, (tile_width, tile_height))
         canvas.paste(tile, (idx * tile_width, header_h))
         draw.text((idx * tile_width + 10, 8), label, fill="white", font=fnt)
     draw.text(
@@ -476,15 +560,18 @@ def make_overview_contact_sheet(
     middle_frames: list[Path],
     output_path: Path,
     *,
-    columns: int = 4,
-    tile_width: int = 400,
+    columns: int | None = None,
+    tile_width: int | None = None,
 ) -> None:
     if not middle_frames:
         return
     first = Image.open(middle_frames[0])
-    ratio = first.height / first.width if first.width else 9 / 16
+    columns, tile_width, tile_height = overview_layout(
+        first.size,
+        columns=columns,
+        tile_width=tile_width,
+    )
     first.close()
-    tile_height = max(220, int(tile_width * ratio))
     caption_h = 44
     rows = math.ceil(len(middle_frames) / columns)
     canvas = Image.new(
@@ -498,7 +585,7 @@ def make_overview_contact_sheet(
         row, col = divmod(idx, columns)
         x, y = col * tile_width, row * (tile_height + caption_h)
         with Image.open(path) as image:
-            canvas.paste(fit_image(image, (tile_width, tile_height)), (x, y))
+            canvas.paste(contain_image(image, (tile_width, tile_height)), (x, y))
         caption = f"{shot.shot_id} {format_time(shot.start_sec)} {shot.duration_sec:.2f}s"
         draw.rectangle((x, y + tile_height, x + tile_width, y + tile_height + caption_h), fill=(28, 28, 28))
         draw.text((x + 8, y + tile_height + 11), caption, fill="white", font=fnt)
@@ -734,7 +821,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         12,
         "已读取视频信息",
         phase="probing",
-        detail=f"{probe.duration_sec:.1f} 秒 · {probe.width}x{probe.height} · {probe.fps:.2f} fps",
+        detail=(
+            f"{probe.duration_sec:.1f} 秒 · {probe.display_width}x{probe.display_height} · "
+            f"{probe.aspect_ratio_label} · {probe.fps:.2f} fps"
+        ),
     )
     progress.emit(13, "正在检测镜头切点", phase="detecting", detail="准备逐帧扫描")
     shots = detect_shots(

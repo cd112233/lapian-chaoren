@@ -7,6 +7,7 @@ import csv
 import hashlib
 import json
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ import yaml
 
 
 LEARNING_SCHEMA_VERSION = "2.0"
-WORKFLOW_VERSION = "0.2.2"
+WORKFLOW_VERSION = "0.2.3"
 
 
 def utc_now() -> str:
@@ -41,6 +42,29 @@ def _number(value: Any, fallback: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _orientation(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "landscape"
+    ratio = width / height
+    if 0.94 <= ratio <= 1.06:
+        return "square"
+    if ratio < 0.94:
+        return "portrait"
+    if ratio >= 2.1:
+        return "ultrawide"
+    return "landscape"
+
+
+def _aspect_label(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return "未知画幅"
+    ratio = Fraction(width, height)
+    if ratio.numerator <= 100 and ratio.denominator <= 100:
+        return f"{ratio.numerator}:{ratio.denominator}"
+    limited = Fraction(width / height).limit_denominator(32)
+    return f"{limited.numerator}:{limited.denominator}"
 
 
 def _shot_scaffold(row: dict[str, str], index: int) -> dict[str, Any]:
@@ -122,6 +146,18 @@ def build_learning_payload(
     metadata_path = analysis_root / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.is_file() else {}
     probe = metadata.get("probe", {}) if isinstance(metadata, dict) else {}
+    frame_width = _integer(probe.get("display_width") or probe.get("width"))
+    frame_height = _integer(probe.get("display_height") or probe.get("height"))
+    display_aspect_ratio = _number(probe.get("display_aspect_ratio"))
+    if display_aspect_ratio <= 0 and frame_height > 0:
+        display_aspect_ratio = frame_width / frame_height
+    orientation = str(probe.get("orientation") or "").strip().lower()
+    if orientation not in {"portrait", "square", "landscape", "ultrawide"}:
+        orientation = _orientation(frame_width, frame_height)
+    ratio_label = str(probe.get("aspect_ratio_label") or "").strip() or _aspect_label(
+        frame_width,
+        frame_height,
+    )
     return {
         "schema_version": LEARNING_SCHEMA_VERSION,
         "project": {
@@ -135,6 +171,12 @@ def build_learning_payload(
             "created_at": utc_now(),
             "duration_sec": _number(probe.get("duration_sec")),
             "fps": _number(probe.get("fps")),
+            "frame_width": frame_width,
+            "frame_height": frame_height,
+            "display_aspect_ratio": round(display_aspect_ratio, 6),
+            "aspect_ratio_label": ratio_label,
+            "orientation": orientation,
+            "rotation_deg": _integer(probe.get("rotation_deg")),
             "shot_count": len(rows),
         },
         "learning_contract": {

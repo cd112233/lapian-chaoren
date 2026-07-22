@@ -334,12 +334,23 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     return ({ direct: '格式已兼容', remux: '已封装为 MP4', transcode: '已适配为 MP4' })[method] || ''
   }
 
+  function mediaGeometryLabel(project) {
+    const labels = { portrait: '竖屏', square: '方屏', landscape: '横屏', ultrawide: '超宽屏' }
+    const orientation = labels[project.orientation] || ''
+    const ratio = project.aspect_ratio_label || ''
+    const width = Number(project.frame_width || 0)
+    const height = Number(project.frame_height || 0)
+    const size = width > 0 && height > 0 ? `${width}×${height}` : ''
+    return [orientation, ratio, size].filter(Boolean).join(' · ')
+  }
+
   function projectRow(project) {
     const ready = project.status === 'ready'
     const busy = !['ready', 'failed'].includes(project.status)
     const progress = Math.max(0, Math.min(100, Number(project.progress || 0)))
     const adaptation = adaptationLabel(project.format_adaptation)
-    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps${adaptation ? ` · ${adaptation}` : ''}` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
+    const geometry = mediaGeometryLabel(project)
+    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps${geometry ? ` · ${geometry}` : ''}${adaptation ? ` · ${adaptation}` : ''}` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
     const error = project.error ? `<p class="error-detail">${escapeHTML(project.error.slice(0, 240))}</p>` : ''
     const href = ready ? `/projects/${encodeURIComponent(project.project_id)}/${project.review_relpath}` : '#'
     const count = Number(project.progress_total || 0)
