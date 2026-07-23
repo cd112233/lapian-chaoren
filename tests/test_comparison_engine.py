@@ -137,6 +137,16 @@ class ComparisonEngineTests(unittest.TestCase):
         module = load_module()
         review = module.normalize_review_payload(
             {
+                "event_reviews": {
+                    "EV001": {
+                        "status": "partial",
+                        "severity": "high",
+                        "root_cause": "吸附事件没有连续成立",
+                        "stage_reviews": {
+                            "EV001-peak": {"status": "difference", "note": "接触点缺失"}
+                        },
+                    }
+                },
                 "pair_reviews": {
                     "PAIR001": {
                         "dimensions": {
@@ -160,11 +170,54 @@ class ComparisonEngineTests(unittest.TestCase):
                 "fix_queue": [{"id": "Q1", "pair_id": "PAIR001", "problem": "节拍慢", "action": "提前峰值"}],
             },
             pair_ids=["PAIR001"],
+            event_ids=["EV001"],
         )
+        self.assertEqual(review["event_reviews"]["EV001"]["status"], "partial")
+        self.assertEqual(review["event_reviews"]["EV001"]["stage_reviews"]["EV001-peak"]["status"], "difference")
         self.assertEqual(review["pair_reviews"]["PAIR001"]["dimensions"]["rhythm"]["status"], "difference")
         self.assertNotIn("unknown", review["pair_reviews"]["PAIR001"]["dimensions"])
         self.assertEqual(review["technical_identifications"][0]["evidence_level"], "已观察")
         self.assertEqual(review["fix_queue"][0]["status"], "open")
+
+    def test_event_segments_keep_causal_windows_and_reject_out_of_range_stages(self) -> None:
+        module = load_module()
+        payload = {
+            "statement": "帧是证据，不是复刻目标。",
+            "events": [
+                {
+                    "event_id": "EV001",
+                    "title": "吸近后踹飞",
+                    "source": {"start_sec": 10, "end_sec": 14},
+                    "remake": {"start_sec": 11, "end_sec": 15.5},
+                    "invariants": ["先吸近，再踹离"],
+                    "stages": [
+                        {
+                            "stage_id": "EV001-peak",
+                            "key": "peak",
+                            "label": "踹击接触",
+                            "source": {"start_sec": 12.2, "end_sec": 12.8},
+                            "remake": {"start_sec": 13.1, "end_sec": 13.8},
+                        }
+                    ],
+                }
+            ],
+        }
+        result = module.normalize_event_segments(
+            payload,
+            reference_duration=20,
+            remake_duration=22,
+        )
+        event = result["events"][0]
+        self.assertEqual(result["comparison_unit"], "causal_event_window")
+        self.assertEqual(event["source"]["source_in"], "00:00:10.000")
+        self.assertEqual(event["stages"][0]["key"], "peak")
+        payload["events"][0]["stages"][0]["source"]["end_sec"] = 15
+        with self.assertRaises(ValueError):
+            module.normalize_event_segments(
+                payload,
+                reference_duration=20,
+                remake_duration=22,
+            )
 
     def test_review_follows_unchanged_pair_instead_of_pair_number(self) -> None:
         module = load_module()

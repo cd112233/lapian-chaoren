@@ -244,6 +244,29 @@ def parse_rate(value: str | None) -> float:
         return float(value)
 
 
+def resolve_video_duration(
+    *,
+    stream_duration: Any,
+    format_duration: Any,
+    frame_count: int,
+    fps: float,
+) -> float:
+    """Prefer the decodable video span over a longer audio/container tail."""
+
+    candidates: list[float] = []
+    for value in (stream_duration, format_duration):
+        try:
+            parsed = float(value or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            candidates.append(parsed)
+    frame_duration = frame_count / fps if frame_count > 0 and fps > 0 else 0.0
+    if frame_duration > 0:
+        candidates.append(frame_duration)
+    return min(candidates) if candidates else 0.0
+
+
 def probe_video(path: Path) -> ProbeInfo:
     payload = json.loads(
         run(
@@ -264,16 +287,26 @@ def probe_video(path: Path) -> ProbeInfo:
     if not video:
         raise SystemExit(f"No video stream found: {path}")
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
-    duration = float(
-        video.get("duration")
-        or payload.get("format", {}).get("duration")
-        or 0.0
-    )
     fps = parse_rate(video.get("avg_frame_rate") or video.get("r_frame_rate"))
     if fps <= 0:
         fps = 24.0
     frames_raw = video.get("nb_frames")
-    frame_count = int(frames_raw) if frames_raw and str(frames_raw).isdigit() else int(round(duration * fps))
+    reported_duration = float(
+        video.get("duration")
+        or payload.get("format", {}).get("duration")
+        or 0.0
+    )
+    frame_count = (
+        int(frames_raw)
+        if frames_raw and str(frames_raw).isdigit()
+        else int(round(reported_duration * fps))
+    )
+    duration = resolve_video_duration(
+        stream_duration=video.get("duration"),
+        format_duration=payload.get("format", {}).get("duration"),
+        frame_count=frame_count,
+        fps=fps,
+    )
     sample_rate_raw = audio.get("sample_rate") if audio else None
     width = int(video.get("width") or 0)
     height = int(video.get("height") or 0)
@@ -368,8 +401,13 @@ def format_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
 
 
-def safe_sample_times(shot: Shot) -> tuple[float, float, float]:
-    pad = min(0.08, shot.duration_sec * 0.08)
+def safe_sample_times(shot: Shot, *, fps: float = 30.0) -> tuple[float, float, float]:
+    nominal_pad = min(0.08, shot.duration_sec * 0.08)
+    # Seeking after the final video PTS fails when the container/audio duration
+    # is slightly longer than the last decodable frame. Keep at least one frame
+    # of guard space while retaining evidence from very short impact inserts.
+    frame_guard = 1.25 / max(1.0, fps)
+    pad = min(shot.duration_sec * 0.45, max(nominal_pad, frame_guard))
     start = shot.start_sec + pad
     middle = shot.start_sec + shot.duration_sec / 2.0
     end = max(start, shot.end_sec - pad)
@@ -877,7 +915,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         )
         shot_dir = output_root / "shots" / shot.shot_id
         frame_paths = [shot_dir / "start.jpg", shot_dir / "middle.jpg", shot_dir / "end.jpg"]
-        for timestamp, frame_path in zip(safe_sample_times(shot), frame_paths):
+        for timestamp, frame_path in zip(safe_sample_times(shot, fps=probe.fps), frame_paths):
             extract_frame(video_path, timestamp, frame_path, args.frame_width)
         make_shot_contact_sheet(shot, frame_paths, shot_dir / "contact_sheet.jpg")
         middle_frames.append(frame_paths[1])

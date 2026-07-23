@@ -178,6 +178,7 @@ class WorkbenchServerTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             port = server.server_address[1]
+            page_exists = False
             try:
                 idle_request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/projects/{idle_id}",
@@ -415,6 +416,69 @@ class WorkbenchServerTests(unittest.TestCase):
         self.assertEqual(len(comparisons), 1)
         self.assertEqual(detail["source_filename"], "remake.mov")
         self.assertEqual(deleted["comparison_id"], comparison_id)
+
+    def test_event_segments_api_validates_and_builds_comparison_page(self) -> None:
+        module = load_module()
+        project_id = "20260721-120009-abcdef12"
+        comparison_id = "cmp-20260721-120010-deadbeef"
+        with tempfile.TemporaryDirectory() as directory:
+            server = module.WorkbenchHTTPServer(("127.0.0.1", 0), module.WorkbenchHandler)
+            server.store = module.ProjectStore(Path(directory))
+            server.max_upload_bytes = 1024 * 1024
+            server.store.write(project_id, {"project_id": project_id, "title": "Reference", "status": "ready"})
+            server.store.write_comparison(
+                project_id,
+                comparison_id,
+                {
+                    "project_id": project_id,
+                    "comparison_id": comparison_id,
+                    "title": "Event Test",
+                    "status": "ready",
+                    "reference": {"duration_sec": 10},
+                    "remake": {"duration_sec": 11},
+                    "alignment": {"pairs": []},
+                    "review": {},
+                },
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            try:
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons/{comparison_id}/events",
+                    data=json.dumps(
+                        {
+                            "event_segments": {
+                                "events": [
+                                    {
+                                        "event_id": "EV001",
+                                        "title": "吸近后踹飞",
+                                        "source": {"start_sec": 1, "end_sec": 5},
+                                        "remake": {"start_sec": 1.2, "end_sec": 5.8},
+                                    }
+                                ]
+                            }
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="PUT",
+                )
+                with urllib.request.urlopen(request) as response:
+                    comparison = json.load(response)["comparison"]
+                page_exists = (
+                    server.store.project_root(project_id)
+                    / "comparisons"
+                    / comparison_id
+                    / "comparison.html"
+                ).is_file()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertEqual(comparison["event_segments"]["events"][0]["event_id"], "EV001")
+        self.assertIn("event_reviews", comparison["review"])
+        self.assertTrue(page_exists)
 
 
 if __name__ == "__main__":

@@ -774,6 +774,7 @@ DIMENSIONS = [
 
 def _default_review() -> dict[str, Any]:
     return {
+        "event_reviews": {},
         "pair_reviews": {},
         "technical_identifications": [],
         "fix_queue": [],
@@ -915,13 +916,226 @@ def _limited_text(value: Any, maximum: int) -> str:
     return str(value or "").strip()[:maximum]
 
 
-def normalize_review_payload(payload: Any, *, pair_ids: Iterable[str]) -> dict[str, Any]:
+EVENT_STAGE_KEYS = {"entry", "development", "peak", "reaction", "exit"}
+
+
+def _bounded_list(value: Any, *, maximum_items: int, maximum_text: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        _limited_text(item, maximum_text)
+        for item in value[:maximum_items]
+        if _limited_text(item, maximum_text)
+    ]
+
+
+def _normalize_event_range(value: Any, *, duration_limit: float, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be an object")
+    try:
+        start = max(0.0, float(value.get("start_sec") or 0.0))
+        end = float(value.get("end_sec") or 0.0)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} contains invalid time values") from error
+    if end <= start:
+        raise ValueError(f"{field_name} must have a positive duration")
+    if duration_limit > 0 and end > duration_limit + 0.25:
+        raise ValueError(f"{field_name} exceeds the video duration")
+    return {
+        "start_sec": round(start, 4),
+        "end_sec": round(end, 4),
+        "duration_sec": round(end - start, 4),
+        "source_in": format_time(start),
+        "source_out": format_time(end),
+    }
+
+
+def normalize_event_segments(
+    payload: Any,
+    *,
+    reference_duration: float,
+    remake_duration: float,
+) -> dict[str, Any]:
+    """Validate causal event windows without treating frames as replication truth."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("event_segments must be an object")
+    raw_events = payload.get("events", [])
+    if not isinstance(raw_events, list):
+        raise ValueError("event_segments.events must be a list")
+    normalized: dict[str, Any] = {
+        "schema_version": _limited_text(payload.get("schema_version") or "1.0", 24),
+        "comparison_unit": "causal_event_window",
+        "statement": _limited_text(
+            payload.get("statement")
+            or "帧只用于定位证据；验收对象是事件顺序、运动关系、峰值阶段与最终画面结果。",
+            800,
+        ),
+        "tolerance_policy": _limited_text(payload.get("tolerance_policy"), 1200),
+        "events": [],
+    }
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(raw_events[:300], start=1):
+        if not isinstance(raw, dict):
+            continue
+        event_id = _limited_text(raw.get("event_id") or f"EV{index:03d}", 48)
+        if not event_id or event_id in seen_ids:
+            raise ValueError("event ids must be non-empty and unique")
+        seen_ids.add(event_id)
+        source = _normalize_event_range(
+            raw.get("source"),
+            duration_limit=reference_duration,
+            field_name=f"{event_id}.source",
+        )
+        remake = _normalize_event_range(
+            raw.get("remake"),
+            duration_limit=remake_duration,
+            field_name=f"{event_id}.remake",
+        )
+        raw_analysis = raw.get("analysis", {})
+        analysis = raw_analysis if isinstance(raw_analysis, dict) else {}
+        status = str(analysis.get("status") or "unreviewed")
+        if status not in {"unreviewed", "match", "partial", "difference", "uncertain"}:
+            status = "unreviewed"
+        severity = str(analysis.get("severity") or "medium")
+        if severity not in {"high", "medium", "low", "none"}:
+            severity = "medium"
+        stages: list[dict[str, Any]] = []
+        stage_ids: set[str] = set()
+        raw_stages = raw.get("stages", [])
+        if isinstance(raw_stages, list):
+            for stage_index, stage in enumerate(raw_stages[:12], start=1):
+                if not isinstance(stage, dict):
+                    continue
+                key = str(stage.get("key") or "development")
+                if key not in EVENT_STAGE_KEYS:
+                    key = "development"
+                stage_id = _limited_text(stage.get("stage_id") or f"{event_id}-{key}", 64)
+                if stage_id in stage_ids:
+                    stage_id = f"{event_id}-{key}-{stage_index}"
+                stage_ids.add(stage_id)
+                stage_status = str(stage.get("status") or "unreviewed")
+                if stage_status not in {"unreviewed", "match", "partial", "difference", "uncertain"}:
+                    stage_status = "unreviewed"
+                source_window = _normalize_event_range(
+                    stage.get("source") or source,
+                    duration_limit=reference_duration,
+                    field_name=f"{stage_id}.source",
+                )
+                remake_window = _normalize_event_range(
+                    stage.get("remake") or remake,
+                    duration_limit=remake_duration,
+                    field_name=f"{stage_id}.remake",
+                )
+                if source_window["start_sec"] < source["start_sec"] - 0.001 or source_window["end_sec"] > source["end_sec"] + 0.001:
+                    raise ValueError(f"{stage_id}.source must stay inside its event")
+                if remake_window["start_sec"] < remake["start_sec"] - 0.001 or remake_window["end_sec"] > remake["end_sec"] + 0.001:
+                    raise ValueError(f"{stage_id}.remake must stay inside its event")
+                stages.append(
+                    {
+                        "stage_id": stage_id,
+                        "key": key,
+                        "label": _limited_text(stage.get("label") or key, 100),
+                        "status": stage_status,
+                        "source": source_window,
+                        "remake": remake_window,
+                        "source_description": _limited_text(stage.get("source_description"), 3000),
+                        "remake_observation": _limited_text(stage.get("remake_observation"), 3000),
+                    }
+                )
+        raw_prompt = raw.get("prompt_trace", {})
+        prompt_trace = raw_prompt if isinstance(raw_prompt, dict) else {}
+        normalized["events"].append(
+            {
+                "event_id": event_id,
+                "title": _limited_text(raw.get("title") or event_id, 180),
+                "generation_segment": _limited_text(raw.get("generation_segment"), 80),
+                "source_shot_ids": _bounded_list(
+                    raw.get("source_shot_ids"), maximum_items=80, maximum_text=24
+                ),
+                "source": source,
+                "remake": remake,
+                "stages": stages,
+                "invariants": _bounded_list(
+                    raw.get("invariants"), maximum_items=16, maximum_text=600
+                ),
+                "tolerances": _bounded_list(
+                    raw.get("tolerances"), maximum_items=12, maximum_text=500
+                ),
+                "failure_conditions": _bounded_list(
+                    raw.get("failure_conditions"), maximum_items=16, maximum_text=600
+                ),
+                "analysis": {
+                    "status": status,
+                    "severity": severity,
+                    "conclusion_level": _limited_text(
+                        analysis.get("conclusion_level") or "AI初判 · 待人工复核", 80
+                    ),
+                    "preserved": _bounded_list(
+                        analysis.get("preserved"), maximum_items=10, maximum_text=500
+                    ),
+                    "observed_difference": _limited_text(
+                        analysis.get("observed_difference"), 5000
+                    ),
+                    "impact": _limited_text(analysis.get("impact"), 3000),
+                    "likely_root_cause": _limited_text(
+                        analysis.get("likely_root_cause"), 3000
+                    ),
+                    "next_action": _limited_text(analysis.get("next_action"), 4000),
+                },
+                "prompt_trace": {
+                    "file": _limited_text(prompt_trace.get("file"), 500),
+                    "instruction": _limited_text(prompt_trace.get("instruction"), 3000),
+                    "diagnosis": _limited_text(prompt_trace.get("diagnosis"), 3000),
+                },
+                "evidence_sheet": _limited_text(raw.get("evidence_sheet"), 500),
+            }
+        )
+    return normalized
+
+
+def normalize_review_payload(
+    payload: Any,
+    *,
+    pair_ids: Iterable[str],
+    event_ids: Iterable[str] = (),
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("review must be an object")
     valid_pairs = set(pair_ids)
+    valid_events = set(event_ids)
     valid_dimensions = {item["key"] for item in DIMENSIONS}
-    valid_statuses = {"unreviewed", "match", "difference", "uncertain"}
+    valid_statuses = {"unreviewed", "match", "partial", "difference", "uncertain"}
     normalized = _default_review()
+    event_reviews = payload.get("event_reviews", {})
+    if not isinstance(event_reviews, dict):
+        raise ValueError("event_reviews must be an object")
+    for event_id, review in event_reviews.items():
+        if event_id not in valid_events or not isinstance(review, dict):
+            continue
+        status = str(review.get("status") or "unreviewed")
+        severity = str(review.get("severity") or "medium")
+        stage_reviews: dict[str, Any] = {}
+        raw_stages = review.get("stage_reviews", {})
+        if isinstance(raw_stages, dict):
+            for stage_id, stage_review in list(raw_stages.items())[:20]:
+                if not isinstance(stage_review, dict) or not str(stage_id).startswith(f"{event_id}-"):
+                    continue
+                stage_status = str(stage_review.get("status") or "unreviewed")
+                stage_reviews[_limited_text(stage_id, 64)] = {
+                    "status": stage_status if stage_status in valid_statuses else "unreviewed",
+                    "note": _limited_text(stage_review.get("note"), 2500),
+                }
+        normalized["event_reviews"][event_id] = {
+            "status": status if status in valid_statuses else "unreviewed",
+            "severity": severity if severity in {"high", "medium", "low", "none"} else "medium",
+            "observed_difference": _limited_text(review.get("observed_difference"), 5000),
+            "impact": _limited_text(review.get("impact"), 3000),
+            "root_cause": _limited_text(review.get("root_cause"), 3000),
+            "next_action": _limited_text(review.get("next_action"), 4000),
+            "conclusion": _limited_text(review.get("conclusion"), 5000),
+            "stage_reviews": stage_reviews,
+        }
     pair_reviews = payload.get("pair_reviews", {})
     if not isinstance(pair_reviews, dict):
         raise ValueError("pair_reviews must be an object")
@@ -973,6 +1187,7 @@ def normalize_review_payload(payload: Any, *, pair_ids: Iterable[str]) -> dict[s
                 {
                     "id": _limited_text(item.get("id"), 80),
                     "pair_id": str(item.get("pair_id") or "") if item.get("pair_id") in valid_pairs else "",
+                    "event_id": str(item.get("event_id") or "") if item.get("event_id") in valid_events else "",
                     "term": _limited_text(item.get("term"), 160),
                     "evidence_level": level,
                     "basis": _limited_text(item.get("basis"), 4000),
@@ -985,7 +1200,10 @@ def normalize_review_payload(payload: Any, *, pair_ids: Iterable[str]) -> dict[s
             if not isinstance(item, dict):
                 continue
             pair_id = str(item.get("pair_id") or "")
+            event_id = str(item.get("event_id") or "")
             if pair_id and pair_id not in valid_pairs:
+                continue
+            if event_id and event_id not in valid_events:
                 continue
             status = str(item.get("status") or "open")
             if status not in {"open", "doing", "done"}:
@@ -994,6 +1212,7 @@ def normalize_review_payload(payload: Any, *, pair_ids: Iterable[str]) -> dict[s
                 {
                     "id": _limited_text(item.get("id"), 80),
                     "pair_id": pair_id,
+                    "event_id": event_id,
                     "severity": (
                         str(item.get("severity"))
                         if str(item.get("severity")) in {"high", "medium", "low"}
@@ -1012,6 +1231,8 @@ def remap_review_for_alignment(
     review: dict[str, Any] | None,
     old_pairs: list[dict[str, Any]],
     new_pairs: list[dict[str, Any]],
+    *,
+    event_ids: Iterable[str] = (),
 ) -> tuple[dict[str, Any], dict[str, int]]:
     """Keep reviews only on an unchanged source/remake pairing after realignment."""
 
@@ -1036,6 +1257,8 @@ def remap_review_for_alignment(
     }
     remapped = _default_review()
     remapped["overall_note"] = _limited_text(review.get("overall_note"), 8000)
+    if isinstance(review.get("event_reviews"), dict):
+        remapped["event_reviews"] = dict(review["event_reviews"])
     preserved = 0
     dropped = 0
     pair_reviews = review.get("pair_reviews", {})
@@ -1064,7 +1287,7 @@ def remap_review_for_alignment(
     remap_items("technical_identifications")
     remap_items("fix_queue")
     valid_ids = [str(pair.get("pair_id")) for pair in new_pairs if isinstance(pair, dict)]
-    return normalize_review_payload(remapped, pair_ids=valid_ids), {
+    return normalize_review_payload(remapped, pair_ids=valid_ids, event_ids=event_ids), {
         "preserved_pair_reviews": preserved,
         "dropped_pair_reviews": dropped,
     }

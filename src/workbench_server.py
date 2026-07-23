@@ -36,6 +36,7 @@ from comparison_engine import (
     build_comparison_analysis,
     load_shots,
     load_signal_tracks,
+    normalize_event_segments,
     normalize_review_payload,
     remap_review_for_alignment,
     save_signal_tracks,
@@ -586,10 +587,16 @@ def rebuild_comparison_analysis(
         existing_review=comparison.get("review"),
         on_progress=comparison_progress,
     )
+    event_ids = [
+        str(item.get("event_id"))
+        for item in comparison.get("event_segments", {}).get("events", [])
+        if isinstance(item, dict) and item.get("event_id")
+    ]
     remapped_review, remap_summary = remap_review_for_alignment(
         comparison.get("review"),
         comparison.get("alignment", {}).get("pairs", []),
         analysis.get("alignment", {}).get("pairs", []),
+        event_ids=event_ids,
     )
     analysis["review"] = remapped_review
     analysis["review_remap"] = remap_summary
@@ -1454,12 +1461,79 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     raise RuntimeError("当前对比仍在处理，完成后才能保存审核。")
                 pairs = comparison.get("alignment", {}).get("pairs", [])
                 pair_ids = [item.get("pair_id") for item in pairs if isinstance(item, dict)]
-                review = normalize_review_payload(payload.get("review"), pair_ids=pair_ids)
+                event_ids = [
+                    item.get("event_id")
+                    for item in comparison.get("event_segments", {}).get("events", [])
+                    if isinstance(item, dict) and item.get("event_id")
+                ]
+                review = normalize_review_payload(
+                    payload.get("review"),
+                    pair_ids=pair_ids,
+                    event_ids=event_ids,
+                )
                 comparison = store.update_comparison(
                     project_id,
                     comparison_id,
                     review=review,
                     review_updated_at=utc_now(),
+                )
+                build_comparison_page(
+                    store.comparison_manifest_path(project_id, comparison_id),
+                    store.comparison_root(project_id, comparison_id) / "comparison.html",
+                )
+            except ValueError as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                return
+            except FileNotFoundError:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "comparison not found"})
+                return
+            except RuntimeError as error:
+                self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
+                return
+            self._send_json(HTTPStatus.OK, {"comparison": comparison})
+            return
+
+        events_match = re.fullmatch(
+            r"/api/projects/([^/]+)/comparisons/([^/]+)/events",
+            path,
+        )
+        if events_match:
+            project_id, comparison_id = events_match.groups()
+            try:
+                payload = self._read_json(max_bytes=MAX_REVIEW_BODY_BYTES)
+                store = self.server.current_store()
+                comparison = store.read_comparison(project_id, comparison_id)
+                if comparison.get("status") != "ready":
+                    raise RuntimeError("当前对比仍在处理，完成后才能写入关键事件段。")
+                reference_duration = float(
+                    comparison.get("reference", {}).get("duration_sec")
+                    or comparison.get("summary", {}).get("reference_duration_sec")
+                    or 0
+                )
+                remake_duration = float(
+                    comparison.get("remake", {}).get("duration_sec")
+                    or comparison.get("summary", {}).get("remake_duration_sec")
+                    or 0
+                )
+                event_segments = normalize_event_segments(
+                    payload.get("event_segments"),
+                    reference_duration=reference_duration,
+                    remake_duration=remake_duration,
+                )
+                pairs = comparison.get("alignment", {}).get("pairs", [])
+                pair_ids = [item.get("pair_id") for item in pairs if isinstance(item, dict)]
+                event_ids = [item["event_id"] for item in event_segments["events"]]
+                review = normalize_review_payload(
+                    comparison.get("review") or {},
+                    pair_ids=pair_ids,
+                    event_ids=event_ids,
+                )
+                comparison = store.update_comparison(
+                    project_id,
+                    comparison_id,
+                    event_segments=event_segments,
+                    review=review,
+                    event_segments_updated_at=utc_now(),
                 )
                 build_comparison_page(
                     store.comparison_manifest_path(project_id, comparison_id),
