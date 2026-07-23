@@ -15,7 +15,7 @@ import yaml
 
 
 LEARNING_SCHEMA_VERSION = "2.0"
-WORKFLOW_VERSION = "0.2.3"
+WORKFLOW_VERSION = "0.3.0"
 
 
 def utc_now() -> str:

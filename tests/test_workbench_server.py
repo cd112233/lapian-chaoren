@@ -52,6 +52,10 @@ class WorkbenchServerTests(unittest.TestCase):
         self.assertIn('id="uploadProgressBar"', document)
         self.assertIn('id="deleteDialog"', document)
         self.assertIn('id="locationDialog"', document)
+        self.assertIn('id="comparisonDialog"', document)
+        self.assertIn('class="compare-project"', document)
+        self.assertIn("/comparisons`,", document)
+        self.assertIn("data-comparison-delete", document)
         self.assertIn('id="projectsRootInput"', document)
         self.assertIn("method: 'DELETE'", document)
         self.assertIn("method: 'PUT'", document)
@@ -135,6 +139,30 @@ class WorkbenchServerTests(unittest.TestCase):
         self.assertEqual(recovered["status"], "failed")
         self.assertEqual(recovered["progress"], 63)
         self.assertEqual(recovered["stage"], "上次处理被中断")
+
+    def test_comparison_store_is_confined_and_recovers_interrupted_work(self) -> None:
+        module = load_module()
+        project_id = "20260721-120006-abcdef12"
+        comparison_id = "cmp-20260721-120007-deadbeef"
+        with tempfile.TemporaryDirectory() as directory:
+            store = module.ProjectStore(Path(directory))
+            store.write(project_id, {"project_id": project_id, "title": "Reference", "status": "ready"})
+            store.write_comparison(
+                project_id,
+                comparison_id,
+                {
+                    "project_id": project_id,
+                    "comparison_id": comparison_id,
+                    "title": "Interrupted comparison",
+                    "status": "comparing",
+                },
+            )
+            self.assertEqual(store.recover_interrupted(), 1)
+            recovered = store.read_comparison(project_id, comparison_id)
+            with self.assertRaises(ValueError):
+                store.read_comparison(project_id, "../../outside")
+        self.assertEqual(recovered["status"], "failed")
+        self.assertEqual(recovered["stage"], "上次对比被中断")
 
     def test_delete_api_removes_idle_project_and_rejects_active_project(self) -> None:
         module = load_module()
@@ -332,6 +360,61 @@ class WorkbenchServerTests(unittest.TestCase):
 
         self.assertEqual(created["source_filename"], "camera-capture.data")
         self.assertEqual(created["format_adaptation"]["status"], "pending")
+
+    def test_comparison_api_accepts_lists_and_deletes_remake_video(self) -> None:
+        module = load_module()
+        module.process_comparison = lambda store, project_id, comparison_id: None
+        project_id = "20260721-120008-abcdef12"
+        with tempfile.TemporaryDirectory() as directory:
+            server = module.WorkbenchHTTPServer(("127.0.0.1", 0), module.WorkbenchHandler)
+            server.store = module.ProjectStore(Path(directory))
+            server.max_upload_bytes = 1024 * 1024
+            server.store.write(
+                project_id,
+                {
+                    "project_id": project_id,
+                    "title": "Reference",
+                    "status": "ready",
+                    "source_relpath": "source/reference.mp4",
+                },
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+            try:
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons",
+                    data=b"remake-video",
+                    headers={"X-Filename": "remake.mov", "X-Comparison-Title": "V1"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request) as response:
+                    comparison = json.load(response)["comparison"]
+                comparison_id = comparison["comparison_id"]
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons"
+                ) as response:
+                    comparisons = json.load(response)["comparisons"]
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons/{comparison_id}"
+                ) as response:
+                    detail = json.load(response)["comparison"]
+                delete_request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons/{comparison_id}",
+                    method="DELETE",
+                )
+                with urllib.request.urlopen(delete_request) as response:
+                    deleted = json.load(response)["deleted"]
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        self.assertEqual(comparison["status"], "queued")
+        self.assertEqual(comparison["title"], "V1")
+        self.assertEqual(len(comparisons), 1)
+        self.assertEqual(detail["source_filename"], "remake.mov")
+        self.assertEqual(deleted["comparison_id"], comparison_id)
 
 
 if __name__ == "__main__":

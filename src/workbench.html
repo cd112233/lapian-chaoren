@@ -57,7 +57,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .upload-progress.visible{display:block}
 .progress-head{display:flex;gap:10px;color:var(--muted);font-size:11px}.progress-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}.progress-head span{margin-left:auto;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:800}
 .progress-stage{margin-top:6px;color:#3e4944;font-size:11px;font-weight:750}.progress-detail{min-height:17px;margin-top:3px;color:var(--faint);font-size:10px}
-.bar{height:6px;margin-top:9px;overflow:hidden;border-radius:4px;background:#dce3df}.bar i{display:block;width:0;height:100%;background:var(--success);transition:width .2s cubic-bezier(.22,1,.36,1)}
+.bar{height:6px;margin-top:9px;overflow:hidden;border-radius:4px;background:#dce3df}.bar i{display:block;width:100%;height:100%;transform:scaleX(0);transform-origin:left;background:var(--success);transition:transform .2s cubic-bezier(.22,1,.36,1)}
 .upload-error{display:none;margin-top:10px;padding:9px;border:1px solid #ddb9b0;border-radius:5px;background:#fff4f1;color:#85382f;font-size:11px;line-height:1.55}.upload-error.visible{display:block}
 .library{min-width:0}
 .library-head{display:flex;align-items:center;margin-bottom:10px}.library-head h2{margin:0;font-size:15px}.refresh{margin-left:auto;height:30px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:#4d5953;font-size:11px}
@@ -65,14 +65,15 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .project-row{display:grid;grid-template-columns:minmax(0,1fr) 158px 116px;gap:15px;align-items:center;min-height:98px;padding:13px 4px;border-bottom:1px solid var(--line)}
 .project-main{min-width:0}.project-main h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;font-size:14px}.project-main p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:4px 0 0;color:var(--muted);font-size:11px}.project-main code{color:#64706a;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
 .status-block{min-width:0}.status-line{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}.status-line i{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#9da7a2}.status-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-line strong{margin-left:auto;color:#4d5853;font-variant-numeric:tabular-nums}.status-ready i{background:var(--success)}.status-failed i{background:var(--danger)}.status-adapting i,.status-analyzing i,.status-building i,.status-queued i,.status-uploading i{background:var(--warning)}
-.status-stage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--faint);font-size:10px}.mini-bar{height:4px;margin-top:7px;overflow:hidden;border-radius:4px;background:#dce2df}.mini-bar i{display:block;height:100%;background:#bd7341;transition:width .2s cubic-bezier(.22,1,.36,1)}.status-ready+.status-stage~.mini-bar i{background:var(--success)}
-.project-actions{display:grid;grid-template-columns:1fr;gap:6px}.open-link,.delete-project{height:32px;display:inline-grid;place-items:center;border-radius:5px;font-size:11px;font-weight:800}.open-link{border:1px solid var(--primary);background:var(--primary);color:#fff;text-decoration:none}.open-link[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}.delete-project{border:1px solid #d3bbb5;background:transparent;color:#8f4036}.delete-project:hover:not(:disabled){border-color:var(--danger);background:#fff4f1}.delete-project:disabled{cursor:not-allowed;border-color:var(--line);color:#929b97;opacity:.65}
+.status-stage{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--faint);font-size:10px}.mini-bar{height:4px;margin-top:7px;overflow:hidden;border-radius:4px;background:#dce2df}.mini-bar i{display:block;width:100%;height:100%;transform:scaleX(0);transform-origin:left;background:#bd7341;transition:transform .2s cubic-bezier(.22,1,.36,1)}.status-ready+.status-stage~.mini-bar i{background:var(--success)}
+.project-actions{display:grid;grid-template-columns:1fr;gap:6px}.open-link,.compare-project,.delete-project{height:32px;display:inline-grid;place-items:center;border-radius:5px;font-size:11px;font-weight:800}.open-link{border:1px solid var(--primary);background:var(--primary);color:#fff;text-decoration:none}.open-link[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}.compare-project{border:1px solid var(--line-strong);background:var(--surface);color:#38463f}.compare-project:hover:not(:disabled){border-color:#668579;background:var(--rail)}.compare-project:disabled{cursor:not-allowed;color:var(--faint)}.delete-project{border:1px solid #d3bbb5;background:transparent;color:#8f4036}.delete-project:hover:not(:disabled){border-color:var(--danger);background:#fff4f1}.delete-project:disabled{cursor:not-allowed;border-color:var(--line);color:#929b97;opacity:.65}
 .empty{padding:58px 14px;border-bottom:1px solid var(--line);color:var(--muted);text-align:center}.empty b{display:block;color:#39453f;font-size:13px}.empty span{display:block;margin-top:4px;font-size:11px}
 .error-detail{margin-top:6px;color:var(--danger)!important;white-space:normal!important;line-height:1.45}
 .delete-dialog{width:min(430px,calc(100vw - 28px));padding:0;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink)}.delete-dialog::backdrop{background:rgba(12,16,14,.42)}.dialog-head{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.dialog-head h2{margin:0;font-size:15px}.dialog-close{margin-left:auto;width:30px;height:30px;border:0;background:transparent;color:var(--muted);font-size:18px}.dialog-body{padding:15px 16px}.dialog-body p{margin:0;color:var(--muted);font-size:12px;line-height:1.7}.delete-target{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:11px 0;padding:8px 9px;border-radius:5px;background:var(--rail);font-weight:800}.dialog-warning{color:#7e3a32!important}.dialog-error{margin-top:9px!important;color:var(--danger)!important}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}.secondary,.danger-action{height:34px;padding:0 12px;border-radius:5px;font-weight:750}.secondary{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink)}.danger-action{border:1px solid var(--danger);background:var(--danger);color:#fff}.danger-action:disabled{cursor:wait;opacity:.55}.toast{position:fixed;right:18px;bottom:16px;z-index:50;padding:9px 12px;border-radius:5px;background:#17221d;color:#fff;font-size:11px;opacity:0;transform:translateY(6px);pointer-events:none;transition:opacity .16s ease,transform .16s ease}.toast.visible{opacity:1;transform:none}
 .settings-dialog{width:min(610px,calc(100vw - 28px));padding:0;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink)}.settings-dialog::backdrop{background:rgba(12,16,14,.42)}.settings-dialog .dialog-body{padding:0 18px 17px}.location-current{margin:0 -18px 16px;padding:13px 18px;border-bottom:1px solid var(--line);background:var(--rail)}.location-current span,.path-label{display:block;color:var(--muted);font-size:11px;font-weight:750}.location-current code{display:block;overflow-wrap:anywhere;margin-top:4px;color:#303b36;font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}.location-current small{display:block;margin-top:3px;color:var(--faint);font-size:10px}.path-label{margin-bottom:6px;color:#3c4742}.path-control{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.path-control input{min-width:0;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:#fbfcfb;color:var(--ink);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}.path-control input:disabled{background:var(--rail);color:var(--faint)}.path-control .secondary{height:38px;white-space:nowrap}.secondary:hover:not(:disabled){background:var(--rail)}.secondary:disabled{cursor:not-allowed;opacity:.5}.path-help{margin-top:6px!important;color:var(--faint)!important;font-size:10px!important}.location-note{margin-top:14px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:#46524c;font-size:11px;line-height:1.65}.location-note b{display:block;margin-bottom:2px;color:var(--ink)}.setting-status{min-height:18px;margin-top:9px!important;color:var(--faint)!important;font-size:10px!important}.settings-actions{align-items:center}.settings-actions .restore-default{margin-right:auto}.settings-actions-group{display:flex;gap:8px}.settings-error{margin-top:8px!important;color:var(--danger)!important}.save-location{height:34px;padding:0 13px}.save-location:disabled{cursor:not-allowed;opacity:.45}
+.comparison-dialog{width:min(760px,calc(100vw - 28px));padding:0;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink)}.comparison-dialog::backdrop{background:rgba(12,16,14,.42)}.comparison-dialog .dialog-body{padding:0}.comparison-reference{padding:12px 16px;border-bottom:1px solid var(--line);background:var(--rail)}.comparison-reference span{display:block;color:var(--muted);font-size:10px}.comparison-reference b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;font-size:12px}.comparison-create{display:grid;grid-template-columns:minmax(0,1fr) 170px auto;gap:9px;align-items:end;padding:14px 16px;border-bottom:1px solid var(--line)}.comparison-field label{display:block;margin-bottom:5px;color:#3c4742;font-size:10px;font-weight:800}.comparison-field input{width:100%;height:36px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:#fbfcfb;color:var(--ink);font-size:11px}.comparison-file{position:relative;display:flex;align-items:center;min-width:0;height:36px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:#fbfcfb;color:var(--muted);font-size:10px;overflow:hidden}.comparison-file input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.comparison-file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.comparison-upload{height:36px;white-space:nowrap}.comparison-progress{display:none;padding:10px 16px;border-bottom:1px solid var(--line);background:#f0f3f1}.comparison-progress.visible{display:block}.comparison-progress-head{display:flex;gap:10px;color:var(--muted);font-size:10px}.comparison-progress-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}.comparison-progress-head span{margin-left:auto;font-variant-numeric:tabular-nums}.comparison-progress p{margin:3px 0 0;color:var(--faint);font-size:9px}.comparison-list-head{display:flex;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line)}.comparison-list-head b{font-size:11px}.comparison-list-head span{margin-left:auto;color:var(--faint);font-size:9px}.comparison-list{max-height:min(430px,55vh);overflow:auto}.comparison-row{display:grid;grid-template-columns:minmax(0,1fr) 145px 162px;gap:12px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line)}.comparison-main{min-width:0}.comparison-main b,.comparison-main span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.comparison-main b{font-size:11px}.comparison-main span{margin-top:2px;color:var(--muted);font-size:9px}.comparison-status{min-width:0}.comparison-status div{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:9px}.comparison-status i{width:6px;height:6px;border-radius:50%;background:var(--warning)}.comparison-status.ready i{background:var(--success)}.comparison-status.failed i{background:var(--danger)}.comparison-status p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:3px 0 0;color:var(--faint);font-size:8px}.comparison-row-actions{display:grid;grid-template-columns:1fr 58px;gap:5px}.comparison-open,.comparison-delete{height:29px;display:grid;place-items:center;border-radius:4px;font-size:9px;font-weight:800}.comparison-open{border:1px solid var(--primary);background:var(--primary);color:#fff;text-decoration:none}.comparison-open[aria-disabled=true]{pointer-events:none;border-color:var(--line);background:transparent;color:var(--faint)}.comparison-delete{border:1px solid #d3bbb5;background:transparent;color:#8f4036}.comparison-delete.confirming{border-color:var(--danger);background:#fff4f1}.comparison-empty{padding:38px 16px;color:var(--muted);font-size:10px;text-align:center}.comparison-error{display:none;margin:0;padding:9px 16px;border-bottom:1px solid #ddb9b0;background:#fff4f1;color:#85382f;font-size:10px}.comparison-error.visible{display:block}
 @media(max-width:820px){.shell{width:min(100% - 24px,680px);padding-top:20px}.layout{grid-template-columns:1fr;gap:25px}.ingest{position:static}.page-head p{display:none}.project-row{grid-template-columns:minmax(0,1fr) 112px}.status-block{grid-column:1}.project-actions{grid-column:2;grid-row:1/3}.section-name{display:none}}
-@media(max-width:520px){.topbar{gap:9px;padding:0 10px}.health{display:none}.topbar-actions{gap:7px}.location-button{padding:0 8px}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 88px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}.path-control{grid-template-columns:1fr}.path-control .secondary{width:100%}.settings-actions{align-items:stretch;flex-direction:column}.settings-actions .restore-default{margin:0}.settings-actions-group{display:grid;grid-template-columns:1fr 1fr}.settings-actions button{width:100%}.toast{right:9px;bottom:9px;left:9px;text-align:center}}
+@media(max-width:520px){.topbar{gap:9px;padding:0 10px}.health{display:none}.topbar-actions{gap:7px}.location-button{padding:0 8px}.page-head{align-items:start}.page-head .count{font-size:11px}.project-row{grid-template-columns:minmax(0,1fr) 88px;gap:10px}.dropzone{min-height:188px}.shell{width:calc(100% - 18px)}.path-control{grid-template-columns:1fr}.path-control .secondary{width:100%}.settings-actions{align-items:stretch;flex-direction:column}.settings-actions .restore-default{margin:0}.settings-actions-group{display:grid;grid-template-columns:1fr 1fr}.settings-actions button{width:100%}.comparison-create{grid-template-columns:1fr}.comparison-row{grid-template-columns:minmax(0,1fr) 94px}.comparison-status{grid-column:1}.comparison-row-actions{grid-column:2;grid-row:1/3;grid-template-columns:1fr}.toast{right:9px;bottom:9px;left:9px;text-align:center}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -80,7 +81,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 <header class="topbar">
   <div class="brand"><span class="brand-mark">帧</span>拉片超人</div>
   <div class="section-name">片库与导入</div>
-  <div class="topbar-actions"><button class="location-button" id="openLocationSettings" type="button">保存位置</button><div class="version">v0.2.2</div></div>
+  <div class="topbar-actions"><button class="location-button" id="openLocationSettings" type="button">保存位置</button><div class="version">v0.3.0</div></div>
   <div class="health"><i></i>本机运行</div>
 </header>
 <main class="shell">
@@ -139,6 +140,21 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   </div>
   <div class="dialog-actions settings-actions"><button class="secondary restore-default" id="restoreDefaultRoot" type="button">恢复默认位置</button><div class="settings-actions-group"><button class="secondary" id="cancelLocation" type="button">取消</button><button class="primary save-location" id="saveProjectsRoot" type="button">保存并切换</button></div></div>
 </dialog>
+<dialog class="comparison-dialog" id="comparisonDialog" aria-labelledby="comparisonDialogTitle">
+  <div class="dialog-head"><h2 id="comparisonDialogTitle">复刻对比</h2><button class="dialog-close" id="closeComparisonDialog" type="button" aria-label="关闭">×</button></div>
+  <div class="dialog-body">
+    <div class="comparison-reference"><span>对照原片项目</span><b id="comparisonReferenceTitle"></b></div>
+    <div class="comparison-create">
+      <div class="comparison-field"><label for="comparisonTitleInput">对比名称</label><input id="comparisonTitleInput" maxlength="120" placeholder="例如：妖怪复刻 V1"></div>
+      <div class="comparison-field"><label for="comparisonFileInput">复刻视频</label><div class="comparison-file"><input id="comparisonFileInput" type="file" accept="video/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.wmv,.flv,.ts,.m2ts,.mts,.3gp,.3g2,.mpg,.mpeg,.ogv,.vob,.mxf,.rm,.rmvb"><span id="comparisonFileLabel">选择视频文件</span></div></div>
+      <button class="primary comparison-upload" id="startComparisonUpload" type="button" disabled>开始对比</button>
+    </div>
+    <p class="comparison-error" id="comparisonError" role="alert"></p>
+    <div class="comparison-progress" id="comparisonProgress" aria-live="polite"><div class="comparison-progress-head"><b id="comparisonProgressTitle"></b><span id="comparisonProgressPercent">0%</span></div><div class="bar" id="comparisonProgressBar" role="progressbar" aria-label="复刻对比处理进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="comparisonProgressFill"></i></div><p id="comparisonProgressDetail"></p></div>
+    <div class="comparison-list-head"><b>已有对比</b><span id="comparisonCount">0 条</span></div>
+    <div class="comparison-list" id="comparisonList"><div class="comparison-empty">正在读取对比记录…</div></div>
+  </div>
+</dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (() => {
@@ -153,6 +169,12 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   let deleteProjectId = null
   let settingsCache = null
   let toastTimer = null
+  let comparisonProjectId = null
+  let comparisonFile = null
+  let comparisonPolling = null
+  let comparisonsCache = []
+  let armedComparisonDelete = null
+  let armedComparisonTimer = null
 
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -311,7 +333,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     $('#uploadPercent').textContent = `${Math.round(value)}%`
     $('#uploadStage').textContent = stage || '正在处理'
     $('#uploadDetail').textContent = detail
-    $('#uploadBar').style.width = `${value}%`
+    $('#uploadBar').style.transform = `scaleX(${value / 100})`
     $('#uploadProgressBar').setAttribute('aria-valuenow', String(Math.round(value)))
   }
 
@@ -346,11 +368,11 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 
   function projectRow(project) {
     const ready = project.status === 'ready'
-    const busy = !['ready', 'failed'].includes(project.status)
+    const busy = Boolean(project.active) || !['ready', 'failed'].includes(project.status)
     const progress = Math.max(0, Math.min(100, Number(project.progress || 0)))
     const adaptation = adaptationLabel(project.format_adaptation)
     const geometry = mediaGeometryLabel(project)
-    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps${geometry ? ` · ${geometry}` : ''}${adaptation ? ` · ${adaptation}` : ''}` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
+    const meta = ready ? `${project.shot_count || 0} 镜 · ${formatDuration(project.duration_sec)} · ${Number(project.fps || 0).toFixed(2)} fps${geometry ? ` · ${geometry}` : ''}${adaptation ? ` · ${adaptation}` : ''}${project.active ? ' · 对比处理中' : ''}` : `${formatBytes(project.source_size)} · ${project.source_filename || ''}`
     const error = project.error ? `<p class="error-detail">${escapeHTML(project.error.slice(0, 240))}</p>` : ''
     const href = ready ? `/projects/${encodeURIComponent(project.project_id)}/${project.review_relpath}` : '#'
     const count = Number(project.progress_total || 0)
@@ -359,8 +381,8 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     const detail = count > 0 ? `${project.stage || ''} · ${Math.min(current, count)} / ${count} ${unit}` : (project.stage || '')
     return `<article class="project-row">
       <div class="project-main"><h3>${escapeHTML(project.title)}</h3><p>${escapeHTML(meta)}</p><code>${escapeHTML(project.project_id)}</code>${error}</div>
-      <div class="status-block"><div class="status-line status-${escapeHTML(project.status)}"><i></i><span>${escapeHTML(statusLabel(project.status))}</span><strong>${Math.round(progress)}%</strong></div><div class="status-stage" title="${escapeHTML(project.progress_detail || detail)}">${escapeHTML(detail)}</div><div class="mini-bar" role="progressbar" aria-label="${escapeHTML(project.title)}处理进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><i style="width:${progress}%"></i></div></div>
-      <div class="project-actions"><a class="open-link" href="${href}" ${ready ? '' : 'aria-disabled="true"'}>进入审片</a><button class="delete-project" type="button" data-project-id="${escapeHTML(project.project_id)}" ${busy ? 'disabled title="分析完成后可删除"' : ''}>删除</button></div>
+      <div class="status-block"><div class="status-line status-${escapeHTML(project.status)}"><i></i><span>${escapeHTML(statusLabel(project.status))}</span><strong>${Math.round(progress)}%</strong></div><div class="status-stage" title="${escapeHTML(project.progress_detail || detail)}">${escapeHTML(detail)}</div><div class="mini-bar" role="progressbar" aria-label="${escapeHTML(project.title)}处理进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><i style="transform:scaleX(${progress / 100})"></i></div></div>
+      <div class="project-actions"><a class="open-link" href="${href}" ${ready ? '' : 'aria-disabled="true"'}>进入审片</a><button class="compare-project" type="button" data-compare-project-id="${escapeHTML(project.project_id)}" ${ready ? '' : 'disabled title="原片分析完成后可用"'}>复刻对比</button><button class="delete-project" type="button" data-project-id="${escapeHTML(project.project_id)}" ${busy ? 'disabled title="分析任务完成后可删除"' : ''}>删除</button></div>
     </article>`
   }
 
@@ -456,6 +478,166 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     }
   }
 
+  function comparisonStatusLabel(status) {
+    return ({ uploading: '上传中', queued: '等待处理', adapting: '格式适配', analyzing: '切镜分析', comparing: '建立差异证据', aligning: '重建镜头对应', building: '生成工作台', ready: '可以审核', failed: '处理失败' })[status] || '等待处理'
+  }
+
+  function comparisonPageURL(item) {
+    if (!item?.page_relpath || !comparisonProjectId) return '#'
+    const path = String(item.page_relpath).split('/').filter(Boolean).map(encodeURIComponent).join('/')
+    return `/projects/${encodeURIComponent(comparisonProjectId)}/${path}`
+  }
+
+  function setComparisonFile(file) {
+    $('#comparisonError').classList.remove('visible')
+    const extension = file?.name.split('.').pop()?.toLowerCase()
+    const isVideoMime = String(file?.type || '').toLowerCase().startsWith('video/')
+    if (!file || (!allowed.has(extension) && !isVideoMime)) {
+      comparisonFile = null
+      $('#comparisonFileInput').value = ''
+      $('#comparisonFileLabel').textContent = '选择视频文件'
+      $('#startComparisonUpload').disabled = true
+      if (file) { $('#comparisonError').textContent = '无法识别为视频文件，请检查扩展名或 MIME 类型。'; $('#comparisonError').classList.add('visible') }
+      return
+    }
+    comparisonFile = file
+    $('#comparisonFileLabel').textContent = `${file.name} · ${formatBytes(file.size)}`
+    if (!$('#comparisonTitleInput').value.trim()) $('#comparisonTitleInput').value = file.name.replace(/\.[^.]+$/, '')
+    $('#startComparisonUpload').disabled = false
+  }
+
+  function updateComparisonProgress(item, uploadPercent = null) {
+    if (!item && uploadPercent == null) { $('#comparisonProgress').classList.remove('visible'); return }
+    const progress = uploadPercent == null ? Math.max(0, Math.min(100, Number(item?.progress || 0))) : Math.max(1, Math.round(uploadPercent * .08))
+    $('#comparisonProgress').classList.add('visible')
+    $('#comparisonProgressTitle').textContent = item?.title || $('#comparisonTitleInput').value.trim() || '复刻对比'
+    $('#comparisonProgressPercent').textContent = `${Math.round(progress)}%`
+    $('#comparisonProgressFill').style.transform = `scaleX(${progress / 100})`
+    $('#comparisonProgressBar').setAttribute('aria-valuenow', String(Math.round(progress)))
+    $('#comparisonProgressDetail').textContent = uploadPercent == null ? [item?.stage, item?.progress_detail].filter(Boolean).join(' · ') : `正在保存复刻片 · 片源传输 ${uploadPercent}%`
+  }
+
+  function renderComparisonList() {
+    $('#comparisonCount').textContent = `${comparisonsCache.length} 条`
+    if (!comparisonsCache.length) {
+      $('#comparisonList').innerHTML = '<div class="comparison-empty">还没有复刻对比。选择一段复刻视频后，系统会复用原片镜头证据建立对应。</div>'
+      return
+    }
+    $('#comparisonList').innerHTML = comparisonsCache.map((item) => {
+      const ready = item.status === 'ready'
+      const busy = !['ready', 'failed'].includes(item.status)
+      const summary = item.summary || {}
+      const meta = ready ? `${summary.matched_pair_count || 0} 组对应 · ${summary.finding_count || 0} 条机械差异 · 全片差 ${Number(summary.duration_delta_sec || 0) > 0 ? '+' : ''}${Number(summary.duration_delta_sec || 0).toFixed(2)}s` : `${formatBytes(item.source_size)} · ${item.source_filename || ''}`
+      const confirming = armedComparisonDelete === item.comparison_id
+      return `<article class="comparison-row"><div class="comparison-main"><b>${escapeHTML(item.title)}</b><span>${escapeHTML(meta)}</span></div><div class="comparison-status ${escapeHTML(item.status)}"><div><i></i><span>${escapeHTML(comparisonStatusLabel(item.status))}</span><b>${Math.round(Number(item.progress || 0))}%</b></div><p title="${escapeHTML(item.progress_detail || item.error || '')}">${escapeHTML(item.error || item.progress_detail || item.stage || '')}</p></div><div class="comparison-row-actions"><a class="comparison-open" href="${comparisonPageURL(item)}" ${ready ? '' : 'aria-disabled="true"'}>打开对比</a><button class="comparison-delete ${confirming ? 'confirming' : ''}" type="button" data-comparison-delete="${escapeHTML(item.comparison_id)}" ${busy ? 'disabled' : ''}>${confirming ? '确认' : '删除'}</button></div></article>`
+    }).join('')
+  }
+
+  async function loadComparisons() {
+    if (!comparisonProjectId) return
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(comparisonProjectId)}/comparisons`, { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `读取失败：HTTP ${response.status}`)
+      comparisonsCache = Array.isArray(data.comparisons) ? data.comparisons : []
+      renderComparisonList()
+      const active = comparisonsCache.find((item) => !['ready', 'failed'].includes(item.status))
+      if (active) updateComparisonProgress(active)
+      else if ($('#comparisonProgress').classList.contains('visible')) updateComparisonProgress(comparisonsCache[0] || null)
+      if (active && !comparisonPolling) comparisonPolling = setInterval(loadComparisons, 900)
+      if (!active && comparisonPolling) { clearInterval(comparisonPolling); comparisonPolling = null; loadProjects() }
+    } catch (error) {
+      $('#comparisonError').textContent = error.message || '无法读取复刻对比'
+      $('#comparisonError').classList.add('visible')
+    }
+  }
+
+  function openComparisonDialog(projectId) {
+    const project = projectsCache.find((item) => item.project_id === projectId)
+    if (!project || project.status !== 'ready') return
+    comparisonProjectId = projectId
+    comparisonFile = null
+    comparisonsCache = []
+    armedComparisonDelete = null
+    $('#comparisonReferenceTitle').textContent = project.title
+    $('#comparisonTitleInput').value = ''
+    $('#comparisonFileInput').value = ''
+    $('#comparisonFileLabel').textContent = '选择视频文件'
+    $('#startComparisonUpload').disabled = true
+    $('#comparisonError').classList.remove('visible')
+    $('#comparisonProgress').classList.remove('visible')
+    $('#comparisonList').innerHTML = '<div class="comparison-empty">正在读取对比记录…</div>'
+    $('#comparisonDialog').showModal()
+    loadComparisons()
+  }
+
+  function closeComparisonDialog() {
+    $('#comparisonDialog').close()
+  }
+
+  function cleanupComparisonDialog() {
+    clearInterval(comparisonPolling)
+    comparisonPolling = null
+    comparisonProjectId = null
+    comparisonFile = null
+    loadProjects()
+  }
+
+  function uploadComparison() {
+    if (!comparisonFile || !comparisonProjectId) return
+    const file = comparisonFile
+    const title = $('#comparisonTitleInput').value.trim() || file.name.replace(/\.[^.]+$/, '')
+    const button = $('#startComparisonUpload')
+    button.disabled = true
+    $('#comparisonError').classList.remove('visible')
+    updateComparisonProgress({ title, stage: '正在保存复刻片', progress_detail: '等待传输开始' }, 0)
+    const request = new XMLHttpRequest()
+    request.open('POST', `/api/projects/${encodeURIComponent(comparisonProjectId)}/comparisons`)
+    request.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    request.setRequestHeader('X-Filename', encodeURIComponent(file.name))
+    request.setRequestHeader('X-Comparison-Title', encodeURIComponent(title))
+    request.upload.addEventListener('progress', (event) => { if (event.lengthComputable) updateComparisonProgress({ title }, Math.round(event.loaded / event.total * 100)) })
+    request.addEventListener('load', () => {
+      let data = {}
+      try { data = JSON.parse(request.responseText || '{}') } catch {}
+      if (request.status < 200 || request.status >= 300) {
+        $('#comparisonError').textContent = data.error || `导入失败：HTTP ${request.status}`
+        $('#comparisonError').classList.add('visible')
+        button.disabled = false
+        return
+      }
+      comparisonFile = null
+      $('#comparisonFileInput').value = ''
+      $('#comparisonFileLabel').textContent = '选择视频文件'
+      $('#comparisonTitleInput').value = ''
+      updateComparisonProgress(data.comparison)
+      loadComparisons()
+    })
+    request.addEventListener('error', () => { $('#comparisonError').textContent = '本地连接中断，复刻片没有完成导入。'; $('#comparisonError').classList.add('visible'); button.disabled = false })
+    request.send(file)
+  }
+
+  async function deleteComparison(comparisonId) {
+    if (armedComparisonDelete !== comparisonId) {
+      armedComparisonDelete = comparisonId
+      renderComparisonList()
+      clearTimeout(armedComparisonTimer)
+      armedComparisonTimer = setTimeout(() => { armedComparisonDelete = null; renderComparisonList() }, 3200)
+      return
+    }
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(comparisonProjectId)}/comparisons/${encodeURIComponent(comparisonId)}`, { method: 'DELETE' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `删除失败：HTTP ${response.status}`)
+      armedComparisonDelete = null
+      toast(`已删除“${data.deleted?.title || '复刻对比'}”`)
+      await loadComparisons()
+    } catch (error) {
+      $('#comparisonError').textContent = error.message || '删除失败'
+      $('#comparisonError').classList.add('visible')
+    }
+  }
+
   const dropzone = $('#dropzone')
   dropzone.addEventListener('click', () => $('#fileInput').click())
   dropzone.addEventListener('keydown', (event) => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); $('#fileInput').click() } })
@@ -464,8 +646,10 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   $('#startUpload').addEventListener('click', uploadSelected)
   $('#refreshProjects').addEventListener('click', loadProjects)
   $('#projectList').addEventListener('click', (event) => {
-    const button = event.target.closest('.delete-project')
-    if (button && !button.disabled) openDeleteDialog(button.dataset.projectId)
+    const deleteButton = event.target.closest('.delete-project')
+    if (deleteButton && !deleteButton.disabled) { openDeleteDialog(deleteButton.dataset.projectId); return }
+    const compareButton = event.target.closest('.compare-project')
+    if (compareButton && !compareButton.disabled) openComparisonDialog(compareButton.dataset.compareProjectId)
   })
   $('#closeDeleteDialog').addEventListener('click', () => $('#deleteDialog').close())
   $('#cancelDelete').addEventListener('click', () => $('#deleteDialog').close())
@@ -478,6 +662,14 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
   $('#restoreDefaultRoot').addEventListener('click', () => { if (settingsCache?.default_projects_root) { $('#projectsRootInput').value = settingsCache.default_projects_root; $('#projectsRootInput').focus() } })
   $('#saveProjectsRoot').addEventListener('click', saveProjectsRoot)
   $('#projectsRootInput').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !$('#saveProjectsRoot').disabled) saveProjectsRoot() })
+  $('#comparisonFileInput').addEventListener('change', (event) => setComparisonFile(event.target.files?.[0]))
+  $('#startComparisonUpload').addEventListener('click', uploadComparison)
+  $('#closeComparisonDialog').addEventListener('click', closeComparisonDialog)
+  $('#comparisonDialog').addEventListener('close', cleanupComparisonDialog)
+  $('#comparisonList').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-comparison-delete]')
+    if (button && !button.disabled) deleteComparison(button.dataset.comparisonDelete)
+  })
   for (const name of ['dragenter', 'dragover']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.add('dragging') })
   for (const name of ['dragleave', 'drop']) dropzone.addEventListener(name, (event) => { event.preventDefault(); dropzone.classList.remove('dragging') })
   dropzone.addEventListener('drop', (event) => setFile(event.dataTransfer?.files?.[0]))
