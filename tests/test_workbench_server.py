@@ -465,6 +465,33 @@ class WorkbenchServerTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(request) as response:
                     comparison = json.load(response)["comparison"]
+                review_request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons/{comparison_id}/review",
+                    data=json.dumps(
+                        {
+                            "review": {
+                                "event_reviews": {
+                                    "EV001": {
+                                        "human_status": "partial",
+                                        "human_summary": "吸附成立，踹击缺失",
+                                        "feedback_entries": [
+                                            {
+                                                "id": "FB1",
+                                                "kind": "missing",
+                                                "axis": "camera_geometry",
+                                                "text": "AI 漏掉了画面倾斜和透视拉伸",
+                                            }
+                                        ],
+                                    }
+                                }
+                            }
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="PUT",
+                )
+                with urllib.request.urlopen(review_request) as response:
+                    comparison = json.load(response)["comparison"]
                 page_exists = (
                     server.store.project_root(project_id)
                     / "comparisons"
@@ -478,6 +505,11 @@ class WorkbenchServerTests(unittest.TestCase):
 
         self.assertEqual(comparison["event_segments"]["events"][0]["event_id"], "EV001")
         self.assertIn("event_reviews", comparison["review"])
+        event_review = comparison["review"]["event_reviews"]["EV001"]
+        self.assertEqual(event_review["human_status"], "partial")
+        self.assertEqual(event_review["human_summary"], "吸附成立，踹击缺失")
+        self.assertEqual(event_review["feedback_entries"][0]["kind"], "missing")
+        self.assertEqual(event_review["feedback_entries"][0]["axis"], "camera_geometry")
         self.assertTrue(page_exists)
 
 

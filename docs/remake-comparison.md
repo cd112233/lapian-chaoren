@@ -99,6 +99,18 @@
 
 横屏、竖屏、方屏和超宽屏均使用 `object-fit: contain`，不裁切影视证据。
 
+## 快速人工审核
+
+有事件段时，对比页默认进入“逐段审核”。每段只要求先确认整体结果，再按需要添加三类人工反馈：
+
+- `confirmed`：AI 判断正确，或复刻内容已经到位。
+- `missing`：生成片缺少关键内容，但 AI 没有识别出来。
+- `incorrect`：AI 对真实画面、动作因果或复刻结果的描述不成立。
+
+反馈可绑定整段或具体镜头窗口，并自动保存到 `review.event_reviews`。`human_status` 和 `human_summary` 只保存明确的人工结论；已有 AI 草稿仍保留在 `analysis`、旧结构化字段和高级证据区，不会被伪装成人工审核。机器信号、逐镜长分析、提示词追溯和机械候选默认折叠。
+
+每条反馈还可标记关注点：镜头形态、动作因果、构图空间、节奏剪辑、特效交互、角色连续性或其他。其中“镜头形态”覆盖画面倾斜、广角透视拉伸、边缘形变、空间压缩和景深关系。重复出现的镜头形态缺失会改变速度感、压迫感和力量方向，不应降级成普通画面细节。
+
 ## 七维审核
 
 事件主轨确认因果是否成立后，机械镜头辅轨可继续细查：
@@ -171,6 +183,32 @@ DELETE /api/projects/<project-id>/comparisons/<comparison-id>
 ```
 
 `events` 接口校验事件和阶段时间窗不能越过各自视频，也会在事件 ID 变化后丢弃无法安全关联的旧事件审核。写入成功后重新生成对比页面。
+
+## 人工终审收口
+
+逐段审核全部完成后，用结构化收口命令把人工状态提升为当前结论。旧 AI 初判会留在 `analysis.ai_draft`，但不会继续驱动正式修改清单；已采纳反馈会标记为 `applied`，通过段落会自动清除冲突的逐镜返修判断。
+
+```bash
+python3 src/finalize_human_review.py \
+  /absolute/path/to/comparison.json \
+  --corrections /absolute/path/to/final-review-corrections.json
+```
+
+收口脚本会原子更新 `comparison.json`，重建 `comparison.html`，并生成 `attachments/audit/human-final-review.txt` 与 `human-final-review.json`。修正文件可覆盖逐段结论、精简修复队列、全片问题和逐镜分流；没有修正文件时，每个“部分到位”或“关键内容缺失”段落会生成一条默认修复任务。
+
+## 导入外部双轴审查包
+
+当 `compare-video-axes` 已产出 `comparison-manifest.yaml`、`human-findings.yaml` 和 `prompt-contract.yaml` 时，可把完整人工结论导入已有原片项目：
+
+```bash
+python3 src/import_axis_audit.py \
+  --projects-root outputs/projects \
+  --project-id <project-id> \
+  --candidate /absolute/generated.mp4 \
+  --audit-dir /absolute/video-comparison
+```
+
+导入器会校验原片与生成片指纹，保留两条独立时间轴，复制关键证据和实际提示词，并生成可筛选的逐镜分流、关键镜头修改项及提示词执行风险。人工确认的关键镜头使用密集帧范围；其他镜头只按分段锚点插值定位，不宣称为精确动作对应。
 
 ## 当前边界
 
