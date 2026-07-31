@@ -751,8 +751,8 @@ DIMENSIONS = [
     },
     {
         "key": "camera",
-        "label": "摄影机画面效果",
-        "automatic_scope": "画面变化不自动命名为推拉摇移、变焦或拉焦。",
+        "label": "镜头形态与摄影机",
+        "automatic_scope": "画面倾斜、透视拉伸、边缘形变、空间压缩和景深变化需要对照确认；画面变化不自动命名为推拉摇移、变焦或拉焦。",
     },
     {
         "key": "look_vfx",
@@ -994,6 +994,8 @@ def normalize_event_segments(
         )
         raw_analysis = raw.get("analysis", {})
         analysis = raw_analysis if isinstance(raw_analysis, dict) else {}
+        raw_ai_draft = analysis.get("ai_draft", {})
+        ai_draft = raw_ai_draft if isinstance(raw_ai_draft, dict) else {}
         status = str(analysis.get("status") or "unreviewed")
         if status not in {"unreviewed", "match", "partial", "difference", "uncertain"}:
             status = "unreviewed"
@@ -1045,6 +1047,52 @@ def normalize_event_segments(
                 )
         raw_prompt = raw.get("prompt_trace", {})
         prompt_trace = raw_prompt if isinstance(raw_prompt, dict) else {}
+        normalized_analysis = {
+            "status": status,
+            "severity": severity,
+            "conclusion_level": _limited_text(
+                analysis.get("conclusion_level") or "AI初判 · 待人工复核", 80
+            ),
+            "preserved": _bounded_list(
+                analysis.get("preserved"), maximum_items=10, maximum_text=500
+            ),
+            "observed_difference": _limited_text(
+                analysis.get("observed_difference"), 5000
+            ),
+            "impact": _limited_text(analysis.get("impact"), 3000),
+            "likely_root_cause": _limited_text(
+                analysis.get("likely_root_cause"), 3000
+            ),
+            "next_action": _limited_text(analysis.get("next_action"), 4000),
+        }
+        if ai_draft:
+            draft_status = str(ai_draft.get("status") or "unreviewed")
+            if draft_status not in {"unreviewed", "match", "partial", "difference", "uncertain"}:
+                draft_status = "unreviewed"
+            draft_severity = str(ai_draft.get("severity") or "medium")
+            if draft_severity not in {"high", "medium", "low", "none"}:
+                draft_severity = "medium"
+            normalized_analysis["ai_draft"] = {
+                "status": draft_status,
+                "severity": draft_severity,
+                "conclusion_level": _limited_text(
+                    ai_draft.get("conclusion_level") or "AI初判", 80
+                ),
+                "preserved": _bounded_list(
+                    ai_draft.get("preserved"), maximum_items=10, maximum_text=500
+                ),
+                "observed_difference": _limited_text(
+                    ai_draft.get("observed_difference"), 5000
+                ),
+                "impact": _limited_text(ai_draft.get("impact"), 3000),
+                "likely_root_cause": _limited_text(
+                    ai_draft.get("likely_root_cause"), 3000
+                ),
+                "next_action": _limited_text(ai_draft.get("next_action"), 4000),
+            }
+        finalized_at = _limited_text(analysis.get("finalized_at"), 40)
+        if finalized_at:
+            normalized_analysis["finalized_at"] = finalized_at
         normalized["events"].append(
             {
                 "event_id": event_id,
@@ -1065,24 +1113,7 @@ def normalize_event_segments(
                 "failure_conditions": _bounded_list(
                     raw.get("failure_conditions"), maximum_items=16, maximum_text=600
                 ),
-                "analysis": {
-                    "status": status,
-                    "severity": severity,
-                    "conclusion_level": _limited_text(
-                        analysis.get("conclusion_level") or "AI初判 · 待人工复核", 80
-                    ),
-                    "preserved": _bounded_list(
-                        analysis.get("preserved"), maximum_items=10, maximum_text=500
-                    ),
-                    "observed_difference": _limited_text(
-                        analysis.get("observed_difference"), 5000
-                    ),
-                    "impact": _limited_text(analysis.get("impact"), 3000),
-                    "likely_root_cause": _limited_text(
-                        analysis.get("likely_root_cause"), 3000
-                    ),
-                    "next_action": _limited_text(analysis.get("next_action"), 4000),
-                },
+                "analysis": normalized_analysis,
                 "prompt_trace": {
                     "file": _limited_text(prompt_trace.get("file"), 500),
                     "instruction": _limited_text(prompt_trace.get("instruction"), 3000),
@@ -1114,6 +1145,7 @@ def normalize_review_payload(
         if event_id not in valid_events or not isinstance(review, dict):
             continue
         status = str(review.get("status") or "unreviewed")
+        human_status = str(review.get("human_status") or "unreviewed")
         severity = str(review.get("severity") or "medium")
         stage_reviews: dict[str, Any] = {}
         raw_stages = review.get("stage_reviews", {})
@@ -1126,14 +1158,62 @@ def normalize_review_payload(
                     "status": stage_status if stage_status in valid_statuses else "unreviewed",
                     "note": _limited_text(stage_review.get("note"), 2500),
                 }
+        feedback_entries: list[dict[str, Any]] = []
+        raw_feedback = review.get("feedback_entries", [])
+        if isinstance(raw_feedback, list):
+            for index, entry in enumerate(raw_feedback[:100], start=1):
+                if not isinstance(entry, dict):
+                    continue
+                text = _limited_text(entry.get("text"), 2500)
+                if not text:
+                    continue
+                kind = str(entry.get("kind") or "missing")
+                if kind not in {"confirmed", "missing", "incorrect"}:
+                    kind = "missing"
+                axis = str(entry.get("axis") or "other")
+                if axis not in {
+                    "camera_geometry",
+                    "action_causality",
+                    "composition_space",
+                    "timing_edit",
+                    "vfx_interaction",
+                    "character_continuity",
+                    "other",
+                }:
+                    axis = "other"
+                feedback_status = str(entry.get("status") or "open")
+                if feedback_status not in {"open", "applied"}:
+                    feedback_status = "open"
+                stage_id = _limited_text(entry.get("stage_id"), 64)
+                if stage_id and not stage_id.startswith(f"{event_id}-"):
+                    stage_id = ""
+                feedback_entries.append(
+                    {
+                        "id": _limited_text(
+                            entry.get("id") or f"{event_id}-feedback-{index}", 80
+                        ),
+                        "kind": kind,
+                        "axis": axis,
+                        "stage_id": stage_id,
+                        "text": text,
+                        "status": feedback_status,
+                        "created_at": _limited_text(entry.get("created_at"), 40),
+                    }
+                )
         normalized["event_reviews"][event_id] = {
             "status": status if status in valid_statuses else "unreviewed",
+            "human_status": (
+                human_status if human_status in valid_statuses else "unreviewed"
+            ),
             "severity": severity if severity in {"high", "medium", "low", "none"} else "medium",
+            "human_summary": _limited_text(review.get("human_summary"), 1200),
+            "feedback_entries": feedback_entries,
             "observed_difference": _limited_text(review.get("observed_difference"), 5000),
             "impact": _limited_text(review.get("impact"), 3000),
             "root_cause": _limited_text(review.get("root_cause"), 3000),
             "next_action": _limited_text(review.get("next_action"), 4000),
             "conclusion": _limited_text(review.get("conclusion"), 5000),
+            "finalized_at": _limited_text(review.get("finalized_at"), 40),
             "stage_reviews": stage_reviews,
         }
     pair_reviews = payload.get("pair_reviews", {})

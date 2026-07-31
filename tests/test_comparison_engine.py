@@ -140,8 +140,27 @@ class ComparisonEngineTests(unittest.TestCase):
                 "event_reviews": {
                     "EV001": {
                         "status": "partial",
+                        "human_status": "difference",
+                        "human_summary": "风场因果没有成立",
                         "severity": "high",
                         "root_cause": "吸附事件没有连续成立",
+                        "feedback_entries": [
+                            {
+                                "id": "FB1",
+                                "kind": "missing",
+                                "axis": "camera_geometry",
+                                "stage_id": "EV001-peak",
+                                "text": "AI 漏掉了低机位倾斜和广角透视拉伸",
+                            },
+                            {
+                                "id": "FB2",
+                                "kind": "incorrect",
+                                "stage_id": "OTHER-peak",
+                                "text": "这不是反制动作",
+                                "status": "applied",
+                            },
+                        ],
+                        "finalized_at": "2026-07-31T06:00:00+00:00",
                         "stage_reviews": {
                             "EV001-peak": {"status": "difference", "note": "接触点缺失"}
                         },
@@ -173,6 +192,16 @@ class ComparisonEngineTests(unittest.TestCase):
             event_ids=["EV001"],
         )
         self.assertEqual(review["event_reviews"]["EV001"]["status"], "partial")
+        self.assertEqual(review["event_reviews"]["EV001"]["human_status"], "difference")
+        self.assertEqual(review["event_reviews"]["EV001"]["human_summary"], "风场因果没有成立")
+        feedback = review["event_reviews"]["EV001"]["feedback_entries"]
+        self.assertEqual([item["kind"] for item in feedback], ["missing", "incorrect"])
+        self.assertEqual(feedback[0]["axis"], "camera_geometry")
+        self.assertEqual(feedback[1]["axis"], "other")
+        self.assertEqual(feedback[0]["stage_id"], "EV001-peak")
+        self.assertEqual(feedback[1]["stage_id"], "")
+        self.assertEqual(feedback[1]["status"], "applied")
+        self.assertEqual(review["event_reviews"]["EV001"]["finalized_at"], "2026-07-31T06:00:00+00:00")
         self.assertEqual(review["event_reviews"]["EV001"]["stage_reviews"]["EV001-peak"]["status"], "difference")
         self.assertEqual(review["pair_reviews"]["PAIR001"]["dimensions"]["rhythm"]["status"], "difference")
         self.assertNotIn("unknown", review["pair_reviews"]["PAIR001"]["dimensions"])
@@ -188,7 +217,17 @@ class ComparisonEngineTests(unittest.TestCase):
                     "event_id": "EV001",
                     "title": "吸近后踹飞",
                     "source": {"start_sec": 10, "end_sec": 14},
-                    "remake": {"start_sec": 11, "end_sec": 15.5},
+                        "remake": {"start_sec": 11, "end_sec": 15.5},
+                        "analysis": {
+                            "status": "partial",
+                            "observed_difference": "人工终审差异",
+                            "finalized_at": "2026-07-31T06:00:00+00:00",
+                            "ai_draft": {
+                                "status": "difference",
+                                "severity": "high",
+                                "observed_difference": "旧 AI 草稿",
+                            },
+                        },
                     "invariants": ["先吸近，再踹离"],
                     "stages": [
                         {
@@ -207,6 +246,11 @@ class ComparisonEngineTests(unittest.TestCase):
             reference_duration=20,
             remake_duration=22,
         )
+        analysis = result["events"][0]["analysis"]
+        self.assertEqual(analysis["status"], "partial")
+        self.assertEqual(analysis["ai_draft"]["status"], "difference")
+        self.assertEqual(analysis["ai_draft"]["observed_difference"], "旧 AI 草稿")
+        self.assertEqual(analysis["finalized_at"], "2026-07-31T06:00:00+00:00")
         event = result["events"][0]
         self.assertEqual(result["comparison_unit"], "causal_event_window")
         self.assertEqual(event["source"]["source_in"], "00:00:10.000")

@@ -5,14 +5,20 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char])
   const statusLabels = { unreviewed: '待审核', match: '基本一致', partial: '部分成立', difference: '存在偏差', uncertain: '无法确认' }
+  const humanStatusLabels = { unreviewed: '待审核', match: '复刻到位', partial: '部分到位', difference: '关键内容缺失', uncertain: '无法确认' }
+  const feedbackKindLabels = { confirmed: '确认到位', missing: 'AI 漏识别', incorrect: 'AI 写错' }
+  const feedbackAxisLabels = { camera_geometry: '镜头形态', action_causality: '动作因果', composition_space: '构图空间', timing_edit: '节奏剪辑', vfx_interaction: '特效交互', character_continuity: '角色连续性', other: '其他' }
   const severityLabels = { high: '高优先', medium: '中优先', low: '低优先', none: '接近' }
   const bootstrap = window.LAPIAN_COMPARISON || {}
+  const bootstrapHasAudit = Boolean(bootstrap.audit_bundle?.review_status)
+  const bootstrapHasEvents = Array.isArray(bootstrap.event_segments?.events) && bootstrap.event_segments.events.length > 0
   let comparison = bootstrap
   let selectedPairId = ''
   let selectedEventId = ''
-  let activeTab = Array.isArray(bootstrap.event_segments?.events) && bootstrap.event_segments.events.length ? 'events' : 'shots'
-  let monitorSelection = { type: activeTab === 'events' ? 'event' : 'pair', id: '' }
+  let activeTab = bootstrapHasEvents ? 'events' : bootstrapHasAudit ? 'audit' : 'shots'
+  let monitorSelection = { type: bootstrapHasEvents ? 'event' : 'pair', id: '' }
   let monitorWindow = null
+  let auditFilter = 'all'
   let saveTimer = null
   let pollTimer = null
   let toastTimer = null
@@ -28,6 +34,7 @@
   const apiBase = () => `/api/projects/${encodeURIComponent(projectId())}/comparisons/${encodeURIComponent(comparisonId())}`
   const pairs = () => comparison.alignment?.pairs || []
   const events = () => comparison.event_segments?.events || []
+  const auditBundle = () => comparison.audit_bundle && typeof comparison.audit_bundle === 'object' ? comparison.audit_bundle : null
   const selectedPair = () => pairs().find((pair) => pair.pair_id === selectedPairId) || pairs()[0] || null
   const selectedEvent = () => events().find((event) => event.event_id === selectedEventId) || events()[0] || null
   const playbackUnit = () => {
@@ -94,6 +101,9 @@
     }
     const eventReview = review.event_reviews[eventId]
     if (!eventReview.stage_reviews) eventReview.stage_reviews = {}
+    if (!['unreviewed', 'match', 'partial', 'difference', 'uncertain'].includes(eventReview.human_status)) eventReview.human_status = 'unreviewed'
+    if (typeof eventReview.human_summary !== 'string') eventReview.human_summary = ''
+    if (!Array.isArray(eventReview.feedback_entries)) eventReview.feedback_entries = []
     return eventReview
   }
 
@@ -114,7 +124,7 @@
   }
 
   async function saveReview(notify = true) {
-    if (saving || (!reviewDirty && !notify)) return
+    if (saving || (!reviewDirty && !notify)) return false
     saving = true
     clearTimeout(saveTimer)
     setSaveState('正在保存…')
@@ -130,9 +140,11 @@
       reviewDirty = false
       setSaveState('审核已保存', 'success')
       if (notify) toast('审核记录已保存到本地项目')
+      return true
     } catch (error) {
       setSaveState('保存失败', 'error')
       if (notify) toast(error.message || '保存失败')
+      return false
     } finally {
       saving = false
     }
@@ -151,11 +163,8 @@
   function renderSummary() {
     const summary = comparison.summary || {}
     const eventItems = events()
-    const highEvents = eventItems.filter((event) => {
-      const review = ensureReview().event_reviews[event.event_id]
-      const severity = review?.status && review.status !== 'unreviewed' ? review.severity : event.analysis?.severity
-      return severity === 'high'
-    }).length
+    const pendingEvents = eventItems.filter((event) => ensureEventReview(event.event_id).human_status === 'unreviewed').length
+    const feedbackCount = eventItems.reduce((total, event) => total + ensureEventReview(event.event_id).feedback_entries.length, 0)
     $('#pageTitle').textContent = comparison.title || '复刻对比'
     $('#pageSubtitle').textContent = comparison.reference?.title || ''
     $('#comparisonTitle').textContent = comparison.title || '复刻对比'
@@ -163,10 +172,10 @@
     $('#shotCountMetric').textContent = `${summary.reference_shot_count ?? '—'} / ${summary.remake_shot_count ?? '—'}`
     $('#durationMetric').textContent = Number.isFinite(Number(summary.duration_delta_sec)) ? signedSeconds(summary.duration_delta_sec) : '—'
     $('#unmatchedMetric').textContent = `${summary.missing_shot_count || 0} / ${summary.extra_shot_count || 0}`
-    $('#findingMetricLabel').textContent = eventItems.length ? '关键事件 / 高优先' : '机械差异'
-    $('#findingMetric').textContent = eventItems.length ? `${eventItems.length} / ${highEvents}` : summary.finding_count ?? '—'
+    $('#findingMetricLabel').textContent = eventItems.length ? '待审段 / 人工反馈' : '机械差异'
+    $('#findingMetric').textContent = eventItems.length ? `${pendingEvents} / ${feedbackCount}` : summary.finding_count ?? '—'
     $('#unmatchedMetric').parentElement.classList.toggle('is-alert', Boolean((summary.missing_shot_count || 0) + (summary.extra_shot_count || 0)))
-    $('#findingMetric').parentElement.classList.toggle('is-alert', eventItems.length ? Boolean(highEvents) : Boolean(summary.high_finding_count))
+    $('#findingMetric').parentElement.classList.toggle('is-alert', eventItems.length ? Boolean(pendingEvents) : Boolean(summary.high_finding_count))
   }
 
   function setVideoSource(video, path) {
@@ -378,7 +387,7 @@
     if (!side) return `<figure class="evidence-frame"><figcaption><span>${label}</span><span>无对应证据</span></figcaption><div class="frame-missing">该侧没有对应节点</div></figure>`
     const signals = side.signals || {}
     const signalItems = Object.keys(signals).length
-      ? `<div class="signal-row"><span>运动 ${Number(signals.motion || 0).toFixed(2)}</span><span>亮度变化 ${Number(signals.light_change || 0).toFixed(2)}</span><span>声音 ${Number(signals.audio || 0).toFixed(2)}</span></div>`
+      ? `<details class="signal-details"><summary>机器信号</summary><div class="signal-row"><span>运动 ${Number(signals.motion || 0).toFixed(2)}</span><span>亮度变化 ${Number(signals.light_change || 0).toFixed(2)}</span><span>声音能量 ${Number(signals.audio || 0).toFixed(2)}</span></div></details>`
       : ''
     const image = side.image ? `<img src="${mediaURL(side.image)}" alt="${escapeHTML(label)} ${escapeHTML(side.timecode || '')}" loading="lazy">` : '<div class="frame-missing">没有生成该节点帧图</div>'
     return `<figure class="evidence-frame"><figcaption><span>${label}</span><span>${escapeHTML(side.timecode || '')} · ${Math.round(Number(side.phase || 0) * 100)}%</span></figcaption>${image}${signalItems}</figure>`
@@ -419,8 +428,8 @@
     return `<div class="event-stage">
       <div class="stage-name"><b>${escapeHTML(stage.label)}</b><span>${escapeHTML(sourceRange)} / ${escapeHTML(remakeRange)}</span></div>
       <div class="stage-copy"><b>原片必须成立</b><p>${escapeHTML(stage.source_description || '结合连续画面确认这一阶段的进入状态、动作关系和结果。')}</p></div>
-      <div class="stage-copy remake"><b>复刻观察</b><p>${escapeHTML(stage.remake_observation || '待人工复核连续时间窗。')}</p><label class="stage-note-label">人工纠正（可选）</label><textarea class="stage-note" data-event-stage-field="note" data-event-id="${event.event_id}" data-stage-id="${stage.stage_id}" placeholder="只记录 AI 初判不准确或仍漏掉的事实…">${escapeHTML(stageReview.note || '')}</textarea></div>
-      <div class="stage-actions"><select data-event-stage-field="status" data-event-id="${event.event_id}" data-stage-id="${stage.stage_id}">${reviewOptions(status)}</select><button class="stage-seek" type="button" data-event-window="${event.event_id}" data-stage-id="${stage.stage_id}">播放此窗口</button></div>
+      <div class="stage-copy remake"><b>AI 复刻观察</b><p>${escapeHTML(stage.remake_observation || stageReview.note || '待人工复核连续时间窗。')}</p></div>
+      <div class="stage-actions"><span class="stage-status ${escapeHTML(status)}">${escapeHTML(statusLabels[status] || status)}</span><button class="stage-seek" type="button" data-event-window="${event.event_id}" data-stage-id="${stage.stage_id}">播放此窗口</button></div>
     </div>`
   }
 
@@ -428,34 +437,139 @@
     return `<div class="field wide"><label>${escapeHTML(label)}</label><textarea data-event-field="${field}" data-event-id="${eventId}" placeholder="${escapeHTML(placeholder)}">${escapeHTML(value || '')}</textarea></div>`
   }
 
+  function auditAttachment(label, path) {
+    return path ? `<a class="quiet-button" href="${mediaURL(path)}" target="_blank" rel="noopener">${escapeHTML(label)}</a>` : ''
+  }
+
+  function renderAudit() {
+    const audit = auditBundle()
+    if (!audit) return '<div class="empty-state"><b>没有完整审查结论</b><span>该比较仍可使用事件段、机械切镜和修复队列。</span></div>'
+    const verdict = audit.verdict || {}
+    const contract = audit.prompt_contract || {}
+    const categories = audit.classification_categories || []
+    const shots = audit.shots || []
+    const visibleShots = auditFilter === 'all' ? shots : shots.filter((shot) => shot.classification === auditFilter)
+    const categoryButtons = [
+      `<button class="${auditFilter === 'all' ? 'on' : ''}" type="button" data-audit-filter="all">全部 ${shots.length}</button>`,
+      ...categories.map((category) => `<button class="${auditFilter === category.key ? 'on' : ''}" type="button" data-audit-filter="${escapeHTML(category.key)}">${escapeHTML(category.label)} ${category.count}</button>`),
+    ].join('')
+    const shotGrid = visibleShots.map((shot) => `<button class="audit-shot ${escapeHTML(shot.tone || '')} ${shot.critical ? 'critical' : ''}" type="button" data-audit-shot="${escapeHTML(shot.shot_id)}" title="${escapeHTML(`${shot.shot_id} ${shot.title || ''} · ${shot.classification_label || ''}`)}"><b>${escapeHTML(shot.shot_id)}</b><span>${escapeHTML(shot.classification_label || '')}</span></button>`).join('')
+    const globalRows = (audit.global_findings || []).map((finding) => `<div class="audit-finding-row"><span class="severity ${escapeHTML(finding.tone || 'medium')}">${escapeHTML(finding.severity || '')}</span><div class="audit-finding-axis"><b>${escapeHTML(finding.axis_label || finding.axis || '')}</b><span>${escapeHTML(finding.id || '')}</span></div><div class="audit-finding-copy"><b>${escapeHTML(finding.finding || '')}</b><p>${escapeHTML(finding.evidence || '')}</p><div class="audit-repair"><b>修改：</b>${escapeHTML(finding.repair || '')}</div></div></div>`).join('')
+    const criticalRows = shots.filter((shot) => shot.critical).map((shot) => {
+      const image = shot.evidence_sheet ? `<img src="${mediaURL(shot.evidence_sheet)}" alt="${escapeHTML(shot.shot_id)} 双轴逐镜证据" loading="lazy">` : ''
+      return `<article class="audit-critical"><div class="audit-critical-id"><b>${escapeHTML(shot.shot_id)}</b><span>${escapeHTML(shot.severity || '')} · ${escapeHTML(shot.segment_id || '')}</span></div><div class="audit-critical-copy"><b>${escapeHTML(shot.title || '关键镜头')}</b><p>${escapeHTML(shot.finding || '')}</p><p class="audit-repair"><b>修改：</b>${escapeHTML(shot.repair || '')}</p></div><div class="audit-critical-media">${image}<button class="quiet-button" type="button" data-audit-shot="${escapeHTML(shot.shot_id)}">定位双轴时间窗</button></div></article>`
+    }).join('')
+    const promptRows = (contract.segments || []).map((segment) => {
+      const risk = segment.execution_risk || 'unknown'
+      const riskLabel = { high: '高风险', medium: '中风险', lower: '较低风险' }[risk] || '未判定'
+      return `<tr><td><b>${escapeHTML(segment.segment_id || '')}</b></td><td>${escapeHTML(segment.title || '')}</td><td>${Number(segment.duration_sec || 0).toFixed(3)}s</td><td>${segment.shot_count || 0}</td><td>${segment.unicode_characters || 0}</td><td><span class="audit-risk ${escapeHTML(risk)}">${riskLabel}</span></td></tr>`
+    }).join('')
+    const limitations = (audit.limitations || []).map((item) => `<li>${escapeHTML(item)}</li>`).join('')
+    const attachments = audit.attachments || {}
+    const metricByTone = new Map(categories.map((category) => [category.tone, category]))
+    const keep = metricByTone.get('keep') || {}
+    const repair = metricByTone.get('repair') || {}
+    const rebuild = metricByTone.get('rebuild') || {}
+    const highRisk = (contract.high_risk_segments || []).join(' ')
+    return `<section class="wide-view">
+      <div class="wide-head"><div><h1>完整人工审查结论</h1><p>双轴时间码、十段人工锚点、逐镜分流与提示词合同使用同一份审查数据。</p></div></div>
+      <div class="audit-verdict"><div class="audit-verdict-state"><b>${escapeHTML(verdict.label || '待判定')}</b><span>${escapeHTML(audit.review_date || '')} · 人工复核完成</span></div><div class="audit-verdict-copy"><b>可用边界：${escapeHTML(verdict.usable_as || '')}</b><p>${escapeHTML(verdict.summary || '')}</p></div><div class="audit-actions">${auditAttachment('完整报告', attachments.report)}${auditAttachment('逐镜数据', attachments.findings)}${auditAttachment('提示词合同', attachments.prompt_contract)}</div></div>
+      <div class="audit-metrics"><div class="audit-metric"><span>可保留并小修</span><b>${keep.count || 0} 镜</b><small>保留主体内容后重剪或小修</small></div><div class="audit-metric"><span>局部修复</span><b>${repair.count || 0} 镜</b><small>定向重生成或局部后期</small></div><div class="audit-metric"><span>重做或补插帧</span><b>${rebuild.count || 0} 镜</b><small>动作因果或镜头任务未成立</small></div><div class="audit-metric"><span>提示词合同</span><b>${contract.checks_passed || 0} / ${contract.checks_total || 0}</b><small>高执行风险 ${escapeHTML(highRisk || '无')}</small></div></div>
+      <section class="section-block"><div class="section-head"><h2>全片级错误</h2><span>${(audit.global_findings || []).length} 项人工确认</span></div><div class="audit-finding-list">${globalRows}</div></section>
+      <section class="section-block"><div class="section-head"><h2>七十七镜分流</h2><span>镜号对应双轴时间窗</span><div class="audit-filter" role="group" aria-label="镜头处理分类">${categoryButtons}</div></div><div class="audit-shot-grid">${shotGrid}</div><p class="audit-note">关键镜头使用密集帧人工确认范围；其余镜头按十段人工锚点做单调插值，仅用于回看定位。</p></section>
+      <section class="section-block"><div class="section-head"><h2>关键镜头证据与修改动作</h2><span>${shots.filter((shot) => shot.critical).length} 镜</span></div><div class="audit-critical-list">${criticalRows}</div></section>
+      <section class="section-block"><div class="section-head"><h2>分段提示词执行风险</h2><span>${contract.file_count || 0} 个文件 · ${contract.total_unicode_characters || 0} 字符</span></div><table class="audit-prompt-table"><thead><tr><th>段</th><th>任务</th><th>时长</th><th>镜头</th><th>字符</th><th>风险</th></tr></thead><tbody>${promptRows}</tbody></table></section>
+      <section class="section-block"><div class="section-head"><h2>判断边界</h2></div><ul class="audit-limitations">${limitations}</ul></section>
+    </section>`
+  }
+
+  function conciseText(value, maximum = 220) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim()
+    return text.length > maximum ? `${text.slice(0, maximum).trim()}…` : text
+  }
+
+  function feedbackEntryMarkup(event, entry, index) {
+    const stage = (event.stages || []).find((item) => item.stage_id === entry.stage_id)
+    const scope = stage ? stage.label : '整段'
+    return `<div class="feedback-row ${escapeHTML(entry.kind || 'missing')}">
+      <span class="feedback-kind">${escapeHTML(feedbackKindLabels[entry.kind] || '人工反馈')}</span>
+      <div class="feedback-copy"><b>${escapeHTML(feedbackAxisLabels[entry.axis] || '其他')} · ${escapeHTML(scope)}</b><p>${escapeHTML(entry.text || '')}</p></div>
+      <span class="feedback-state">${entry.status === 'applied' ? '已采纳' : '已保存'}</span>
+      <button class="remove-feedback" type="button" data-remove-feedback="${index}" data-event-id="${event.event_id}" aria-label="删除这条反馈" title="删除反馈">×</button>
+    </div>`
+  }
+
   function renderEvents() {
     const event = selectedEvent()
     if (!event) return '<div class="event-empty"><b>还没有关键事件段</b><p>先把镜头合并为完整因果事件，再比较进入、发展、峰值、反应和离开状态。</p></div>'
     const eventReview = ensureEventReview(event.event_id)
     const analysis = event.analysis || {}
-    const severity = eventReview.severity !== 'medium' || eventReview.status !== 'unreviewed' ? eventReview.severity : analysis.severity || 'medium'
+    const aiDraft = analysis.ai_draft && typeof analysis.ai_draft === 'object' ? analysis.ai_draft : analysis
+    const humanStatus = eventReview.human_status || 'unreviewed'
+    const feedbackEntries = eventReview.feedback_entries || []
     const list = events().map((item) => {
       const itemReview = ensureEventReview(item.event_id)
-      const itemSeverity = itemReview.status !== 'unreviewed' ? itemReview.severity : item.analysis?.severity || 'medium'
+      const feedbackCount = itemReview.feedback_entries.length
       const shots = (item.source_shot_ids || []).length ? `${item.source_shot_ids[0]}—${item.source_shot_ids[item.source_shot_ids.length - 1]}` : `${item.source.duration_sec.toFixed(2)}s`
-      return `<button class="event-button ${item.event_id === event.event_id ? 'on' : ''}" type="button" data-select-event="${item.event_id}"><span class="event-code">${escapeHTML(item.event_id)}</span><span class="event-name"><b>${escapeHTML(item.title)}</b><span>${escapeHTML(shots)}</span></span><i class="pair-state ${itemSeverity}"></i></button>`
+      const meta = feedbackCount ? `${feedbackCount} 条反馈 · ${shots}` : shots
+      return `<button class="event-button ${item.event_id === event.event_id ? 'on' : ''}" type="button" data-select-event="${item.event_id}"><span class="event-code">${escapeHTML(item.event_id)}</span><span class="event-name"><b>${escapeHTML(item.title)}</b><span>${escapeHTML(meta)}</span></span><i class="pair-state ${escapeHTML(itemReview.human_status || 'unreviewed')}"></i></button>`
     }).join('')
-    const preserved = (analysis.preserved || []).map((item) => `<span>${escapeHTML(item)}</span>`).join('')
-    const invariants = (event.invariants || []).map((item) => `<li>${escapeHTML(item)}</li>`).join('') || '<li>事件顺序、主动者/被动者、力向和结果构图必须可连续验证。</li>'
+    const invariants = (event.invariants || []).map((item) => `<li>${escapeHTML(item)}</li>`).join('') || '<li>事件顺序、主动者与被动者、力向和结果构图必须可连续验证。</li>'
     const failures = (event.failure_conditions || []).map((item) => `<li>${escapeHTML(item)}</li>`).join('') || '<li>关键动作缺失、顺序颠倒、作用关系错误或桥接状态断裂。</li>'
     const tolerances = (event.tolerances || []).map((item) => `<li>${escapeHTML(item)}</li>`).join('')
     const prompt = event.prompt_trace || {}
     const evidence = event.evidence_sheet ? `<div class="event-evidence"><img src="${mediaURL(event.evidence_sheet)}" alt="${escapeHTML(event.event_id)} 连续事件证据" loading="lazy"></div>` : ''
+    const preservedItems = (aiDraft.preserved || []).filter((item) => String(item || '').trim() && String(item).trim() !== String(aiDraft.observed_difference || '').trim()).slice(0, 3)
+    const preserved = preservedItems.length ? `<div class="ai-preserved"><b>AI 认为已到位</b>${preservedItems.map((item) => `<p>${escapeHTML(conciseText(item, 150))}</p>`).join('')}</div>` : ''
+    const feedbackRows = feedbackEntries.length ? feedbackEntries.map((entry, index) => feedbackEntryMarkup(event, entry, index)).join('') : '<div class="feedback-empty">还没有人工反馈</div>'
+    const stageOptions = (event.stages || []).map((stage) => `<option value="${escapeHTML(stage.stage_id)}">${escapeHTML(stage.label)}</option>`).join('')
+    const stageStrip = (event.stages || []).map((stage) => {
+      const count = feedbackEntries.filter((entry) => entry.stage_id === stage.stage_id).length
+      const shotId = String(stage.label || '').split('·')[0].trim() || stage.stage_id
+      return `<button class="stage-chip ${count ? 'has-feedback' : ''}" type="button" data-event-window="${event.event_id}" data-stage-id="${stage.stage_id}" title="${escapeHTML(stage.label || '')}"><b>${escapeHTML(shotId)}</b><span>${count ? `${count} 条反馈` : statusLabels[stage.status] || '播放'}</span></button>`
+    }).join('')
+    const verdictButtons = ['match', 'partial', 'difference', 'uncertain'].map((status) => `<button class="${humanStatus === status ? 'on' : ''}" type="button" data-event-verdict="${status}" data-event-id="${event.event_id}" aria-pressed="${humanStatus === status}">${humanStatusLabels[status]}</button>`).join('')
+    const aiStatus = aiDraft.status || 'unreviewed'
+    const aiDifference = conciseText(aiDraft.observed_difference || '尚未形成可靠的事件级初判。')
+    const aiHistoryLabel = analysis.ai_draft ? '历史草稿 · 已被人工覆盖' : (aiDraft.conclusion_level || '待人工复核')
+    const finalizedResult = analysis.ai_draft ? `<div class="human-final-result"><b>已采纳的终审结论</b><p>${escapeHTML(analysis.observed_difference || eventReview.conclusion || '')}</p>${analysis.next_action ? `<span><strong>下一版</strong>${escapeHTML(analysis.next_action)}</span>` : ''}</div>` : ''
     return `<div class="event-layout">
-      <aside class="event-rail"><div class="rail-head"><b>关键事件段</b><span>${events().length} 条</span></div><div class="event-list">${list}</div></aside>
+      <aside class="event-rail"><div class="rail-head"><b>逐段审核</b><span>${events().length} 段</span></div><div class="event-list">${list}</div></aside>
       <section class="event-content">
-        <div class="event-head"><div><h1>${escapeHTML(event.event_id)} · ${escapeHTML(event.title)}</h1><p>原片 ${event.source.source_in}—${event.source.source_out} · 复刻 ${event.remake.source_in}—${event.remake.source_out} · ${(event.source_shot_ids || []).join(' / ')}</p></div><div class="event-actions"><button class="quiet-button" type="button" data-event-step="-1">上一段</button><button class="quiet-button" type="button" data-event-step="1">下一段</button><button class="primary-button" type="button" data-event-full="${event.event_id}">播放整个事件</button></div></div>
-        <div class="event-policy"><b>比较单位：</b>${escapeHTML(comparison.event_segments?.statement || '帧只用于定位证据；验收对象是完整因果事件。')}</div>
-        <div class="event-verdict"><div class="event-verdict-label">${escapeHTML(analysis.conclusion_level || 'AI初判 · 待人工复核')}<br><span class="severity ${severity}">${severityLabels[severity] || severity}</span></div><div class="event-verdict-copy"><b>${escapeHTML(analysis.observed_difference || '尚未写入事件级差异')}</b><p>${escapeHTML(analysis.impact || '')}</p>${preserved ? `<div class="event-preserved">${preserved}</div>` : ''}</div></div>
-        <section class="section-block"><div class="section-head"><h2>进入 → 发展 → 峰值 → 反应 → 离开</h2><span>每一项播放连续窗口，不把单帧当真值</span></div><div class="event-stage-list">${(event.stages || []).map((stage) => eventStageMarkup(event, stage)).join('')}</div></section>
-        <div class="event-criteria"><div class="criteria-block"><h2>必须保持</h2><ul>${invariants}</ul></div><div class="criteria-block"><h2>直接判失败</h2><ul>${failures}</ul></div></div>
-        <section class="section-block"><div class="section-head"><h2>人工审核结论</h2><span>只纠正事实、根因与下一版动作</span></div><div class="event-review-grid"><div class="field"><label>事件判断</label><select data-event-field="status" data-event-id="${event.event_id}">${reviewOptions(eventReview.status || 'unreviewed')}</select></div><div class="field"><label>优先级</label><select data-event-field="severity" data-event-id="${event.event_id}"><option value="high" ${eventReview.severity === 'high' ? 'selected' : ''}>高优先</option><option value="medium" ${eventReview.severity === 'medium' ? 'selected' : ''}>中优先</option><option value="low" ${eventReview.severity === 'low' ? 'selected' : ''}>低优先</option><option value="none" ${eventReview.severity === 'none' ? 'selected' : ''}>接近</option></select></div><div class="field"><label>本段结论</label><input data-event-field="conclusion" data-event-id="${event.event_id}" value="${escapeHTML(eventReview.conclusion || '')}" placeholder="一句话确认这一段是否成立"></div>${eventReviewField(event.event_id, 'observed_difference', '可观察差异', eventReview.observed_difference, '先写真实画面哪里不同，不写术语猜测')}${eventReviewField(event.event_id, 'impact', '观感与叙事影响', eventReview.impact, '它破坏了节奏、力学、空间、构图或情绪中的什么')}${eventReviewField(event.event_id, 'root_cause', '最可能根因', eventReview.root_cause, '合并提示词、模型能力、素材、镜头拆分或后期层面的共同原因')}${eventReviewField(event.event_id, 'next_action', '下一版修改动作', eventReview.next_action, '写清重做哪个事件阶段、使用什么控制方式、验收看什么')}</div></section>
-        <details class="prompt-trace"><summary>容许误差、提示词追溯与证据总览</summary><div class="prompt-trace-body"><b>容许误差</b><div><ul>${tolerances || '<li>不影响因果、力向和结果构图的次级运动可浮动。</li>'}</ul></div><b>提示词文件</b><p>${escapeHTML(prompt.file || '未关联')}</p><b>原约束</b><p>${escapeHTML(prompt.instruction || '未关联')}</p><b>根因诊断</b><p>${escapeHTML(prompt.diagnosis || analysis.likely_root_cause || '待复核')}</p><b>建议动作</b><p>${escapeHTML(analysis.next_action || '待复核')}</p></div>${evidence}</details>
+        <div class="event-head"><div><h1>${escapeHTML(event.event_id)} · ${escapeHTML(event.title)}</h1><p>原片 ${event.source.source_in}—${event.source.source_out} · 复刻 ${event.remake.source_in}—${event.remake.source_out}</p></div><div class="event-actions"><button class="quiet-button" type="button" data-event-step="-1">上一段</button><button class="quiet-button" type="button" data-event-step="1">下一段</button><button class="primary-button" type="button" data-event-full="${event.event_id}">播放整段</button></div></div>
+        <div class="event-stage-strip" aria-label="段内镜头窗口">${stageStrip}</div>
+        <section class="review-workbench">
+          <div class="human-review-pane">
+            <div class="review-pane-head"><div><h2>你的审核</h2><span>${feedbackEntries.length} 条反馈</span></div><strong class="human-verdict ${escapeHTML(humanStatus)}">${escapeHTML(humanStatusLabels[humanStatus])}</strong></div>
+            <div class="verdict-switch" role="group" aria-label="本段复刻结果">${verdictButtons}</div>
+            <label class="human-summary-label" for="humanSummary">一句话结论</label>
+            <input class="human-summary" id="humanSummary" data-event-field="human_summary" data-event-id="${event.event_id}" value="${escapeHTML(eventReview.human_summary || '')}" placeholder="只写决定是否修改的核心结论">
+            ${finalizedResult}
+            <div class="feedback-list">${feedbackRows}</div>
+            <div class="feedback-composer">
+              <select id="feedbackKind" aria-label="反馈类型"><option value="missing">AI 漏识别</option><option value="incorrect">AI 写错</option><option value="confirmed">确认到位</option></select>
+              <select id="feedbackAxis" aria-label="反馈关注点"><option value="camera_geometry">镜头形态</option><option value="action_causality">动作因果</option><option value="composition_space">构图空间</option><option value="timing_edit">节奏剪辑</option><option value="vfx_interaction">特效交互</option><option value="character_continuity">角色连续性</option><option value="other">其他</option></select>
+              <select id="feedbackStage" aria-label="反馈对应范围"><option value="">整段</option>${stageOptions}</select>
+              <textarea id="feedbackText" aria-label="人工反馈内容" placeholder="例如：原片有低机位倾斜和广角透视拉伸，复刻画面过平"></textarea>
+              <button class="primary-button" type="button" data-add-event-feedback="${event.event_id}">添加反馈</button>
+            </div>
+            <div class="review-next"><button class="quiet-button" type="button" data-save-next="${event.event_id}">保存并下一段</button></div>
+          </div>
+          <aside class="ai-brief">
+            <div class="review-pane-head"><div><h2>AI 初判</h2><span>${escapeHTML(aiHistoryLabel)}</span></div><strong class="ai-status ${escapeHTML(aiStatus)}">${escapeHTML(statusLabels[aiStatus] || '待审核')}</strong></div>
+            <div class="ai-primary"><b>AI 认为有问题</b><p>${escapeHTML(aiDifference)}</p></div>
+            ${preserved}
+            <details class="ai-full"><summary>查看原始 AI 分析</summary><dl><dt>完整判断</dt><dd>${escapeHTML(aiDraft.observed_difference || '未填写')}</dd><dt>影响</dt><dd>${escapeHTML(aiDraft.impact || '未填写')}</dd><dt>根因猜测</dt><dd>${escapeHTML(aiDraft.likely_root_cause || '未填写')}</dd><dt>建议</dt><dd>${escapeHTML(aiDraft.next_action || '未填写')}</dd></dl></details>
+          </aside>
+        </section>
+        <details class="deep-review">
+          <summary><span>逐镜证据与高级结论</span><small>${(event.stages || []).length} 个镜头窗口</small></summary>
+          <div class="event-policy"><b>比较单位：</b>${escapeHTML(comparison.event_segments?.statement || '帧只用于定位证据；验收对象是完整因果事件。')}</div>
+          <section class="section-block"><div class="section-head"><h2>逐镜 AI 草稿</h2></div><div class="event-stage-list">${(event.stages || []).map((stage) => eventStageMarkup(event, stage)).join('')}</div></section>
+          <div class="event-criteria"><div class="criteria-block"><h2>必须保持</h2><ul>${invariants}</ul></div><div class="criteria-block"><h2>直接判失败</h2><ul>${failures}</ul></div></div>
+          <section class="section-block"><div class="section-head"><h2>结构化修改</h2><span>仅在需要形成正式修复任务时填写</span></div><div class="event-review-grid"><div class="field"><label>旧事件判断</label><select data-event-field="status" data-event-id="${event.event_id}">${reviewOptions(eventReview.status || 'unreviewed')}</select></div><div class="field"><label>优先级</label><select data-event-field="severity" data-event-id="${event.event_id}"><option value="high" ${eventReview.severity === 'high' ? 'selected' : ''}>高优先</option><option value="medium" ${eventReview.severity === 'medium' ? 'selected' : ''}>中优先</option><option value="low" ${eventReview.severity === 'low' ? 'selected' : ''}>低优先</option><option value="none" ${eventReview.severity === 'none' ? 'selected' : ''}>接近</option></select></div><div class="field"><label>正式结论</label><input data-event-field="conclusion" data-event-id="${event.event_id}" value="${escapeHTML(eventReview.conclusion || '')}" placeholder="用于修改清单的正式结论"></div>${eventReviewField(event.event_id, 'observed_difference', '可观察差异', eventReview.observed_difference, '真实画面哪里不同')}${eventReviewField(event.event_id, 'impact', '叙事影响', eventReview.impact, '只保留会影响判断的结果')}${eventReviewField(event.event_id, 'root_cause', '根因', eventReview.root_cause, '合并重复症状')}${eventReviewField(event.event_id, 'next_action', '下一版动作', eventReview.next_action, '明确重做范围和验收点')}</div></section>
+          <details class="prompt-trace"><summary>提示词追溯与容许误差</summary><div class="prompt-trace-body"><b>容许误差</b><div><ul>${tolerances || '<li>不影响因果、力向和结果构图的次级运动可浮动。</li>'}</ul></div><b>提示词文件</b><p>${escapeHTML(prompt.file || '未关联')}</p><b>原约束</b><p>${escapeHTML(prompt.instruction || '未关联')}</p><b>根因诊断</b><p>${escapeHTML(prompt.diagnosis || analysis.likely_root_cause || '待复核')}</p><b>建议动作</b><p>${escapeHTML(analysis.next_action || '待复核')}</p></div>${evidence}</details>
+        </details>
       </section>
     </div>`
   }
@@ -523,9 +637,14 @@
   function renderQueue() {
     const findings = comparison.findings || []
     const queue = ensureReview().fix_queue
+    const feedback = events().flatMap((event) => ensureEventReview(event.event_id).feedback_entries.map((entry) => ({ ...entry, event })))
     const findingRows = findings.length ? findings.map((finding) => `<div class="finding-row"><strong>${severityLabels[finding.severity] || finding.severity}</strong><div class="finding-copy"><b>${escapeHTML(finding.pair_id)} · ${escapeHTML(finding.visible_difference)}</b><p>${escapeHTML(finding.recommendation)}</p></div><button class="quiet-button" type="button" data-add-finding="${finding.finding_id}" ${findingInQueue(finding.finding_id) ? 'disabled' : ''}>${findingInQueue(finding.finding_id) ? '已加入' : '加入队列'}</button></div>`).join('') : '<div class="empty-state"><b>没有机械差异条目</b><span>人工审核中发现的问题仍可直接加入右侧队列。</span></div>'
+    const feedbackRows = feedback.length ? feedback.map((entry) => {
+      const stage = (entry.event.stages || []).find((item) => item.stage_id === entry.stage_id)
+      return `<div class="queue-feedback ${escapeHTML(entry.kind)}"><span>${escapeHTML(feedbackKindLabels[entry.kind] || '人工反馈')}</span><div><b>${escapeHTML(feedbackAxisLabels[entry.axis] || '其他')} · ${escapeHTML(entry.event.event_id)} · ${escapeHTML(stage?.label || entry.event.title)}</b><p>${escapeHTML(entry.text)}</p></div><button class="quiet-button" type="button" data-open-event-review="${entry.event.event_id}">查看</button></div>`
+    }).join('') : '<div class="empty-state compact"><b>还没有人工反馈</b><span>逐段审核中添加的内容会汇总在这里。</span></div>'
     const queueRows = queue.length ? queue.map((item, index) => `<div class="queue-item"><select data-queue-field="status" data-queue-index="${index}"><option value="open" ${item.status === 'open' ? 'selected' : ''}>待处理</option><option value="doing" ${item.status === 'doing' ? 'selected' : ''}>处理中</option><option value="done" ${item.status === 'done' ? 'selected' : ''}>已完成</option></select><div class="queue-copy"><b>${escapeHTML(item.event_id || item.pair_id || '全片')} · ${escapeHTML(item.problem || '未命名问题')}</b><p>${escapeHTML(item.action || '')}</p></div><button class="remove-item" type="button" data-remove-queue="${index}" aria-label="移除修复项">×</button></div>`).join('') : '<div class="empty-state"><b>修复队列还是空的</b><span>只加入能指导下一版制作的根因，不重复堆叠同一问题的症状。</span></div>'
-    return `<section class="wide-view"><div class="wide-head"><div><h1>根因与修复队列</h1><p>机械发现先作为证据，人机审核后再合并成可执行的修改任务。</p></div></div><div class="queue-layout"><div><div class="section-head"><h2>机械差异</h2><span>${findings.length} 条</span></div><div class="auto-findings">${findingRows}</div><div class="section-head" style="margin-top:24px"><h2>已确认修复项</h2><span>${queue.length} 条</span></div><div class="queue-items">${queueRows}</div><div class="section-block"><div class="section-head"><h2>全片复核备注</h2></div><textarea class="overall-note" id="overallReviewNote" placeholder="记录跨镜的共同根因、优先级或下一轮验收顺序…">${escapeHTML(ensureReview().overall_note)}</textarea></div></div><aside class="queue-editor"><h2>新增修复项</h2><div class="queue-field"><label for="queueTarget">对应范围</label><select id="queueTarget"><option value="">全片</option>${events().map((event) => `<option value="event:${event.event_id}">${event.event_id} · ${escapeHTML(event.title)}</option>`).join('')}${pairs().map((pair) => `<option value="pair:${pair.pair_id}">${pair.pair_id} · ${escapeHTML(pairLabel(pair))}</option>`).join('')}</select></div><div class="queue-field"><label for="queueSeverity">优先级</label><select id="queueSeverity"><option value="high">高</option><option value="medium" selected>中</option><option value="low">低</option></select></div><div class="queue-field"><label for="queueProblem">根本问题</label><input id="queueProblem" placeholder="例如：重击峰值整体晚于原片"></div><div class="queue-field"><label for="queueAction">下一版修改动作</label><textarea id="queueAction" placeholder="写清要改哪个时间段、动作阶段、机位或特效层…"></textarea></div><div class="queue-actions"><button class="primary-button" id="addQueueItem" type="button">加入队列</button></div></aside></div></section>`
+    return `<section class="wide-view"><div class="wide-head"><div><h1>人工反馈与修改清单</h1><p>人工结论优先；机器候选仅在需要补充证据时展开。</p></div></div><div class="queue-layout"><div><div class="section-head"><h2>人工反馈</h2><span>${feedback.length} 条</span></div><div class="queue-feedback-list">${feedbackRows}</div><div class="section-head" style="margin-top:24px"><h2>已确认修复项</h2><span>${queue.length} 条</span></div><div class="queue-items">${queueRows}</div><details class="machine-candidates"><summary>机器候选 · ${findings.length} 条</summary><div class="auto-findings">${findingRows}</div></details><div class="section-block"><div class="section-head"><h2>全片复核备注</h2></div><textarea class="overall-note" id="overallReviewNote" placeholder="记录跨镜的共同根因、优先级或下一轮验收顺序…">${escapeHTML(ensureReview().overall_note)}</textarea></div></div><aside class="queue-editor"><h2>新增修复项</h2><div class="queue-field"><label for="queueTarget">对应范围</label><select id="queueTarget"><option value="">全片</option>${events().map((event) => `<option value="event:${event.event_id}">${event.event_id} · ${escapeHTML(event.title)}</option>`).join('')}${pairs().map((pair) => `<option value="pair:${pair.pair_id}">${pair.pair_id} · ${escapeHTML(pairLabel(pair))}</option>`).join('')}</select></div><div class="queue-field"><label for="queueSeverity">优先级</label><select id="queueSeverity"><option value="high">高</option><option value="medium" selected>中</option><option value="low">低</option></select></div><div class="queue-field"><label for="queueProblem">根本问题</label><input id="queueProblem" placeholder="例如：重击峰值整体晚于原片"></div><div class="queue-field"><label for="queueAction">下一版修改动作</label><textarea id="queueAction" placeholder="写清要改哪个时间段、动作阶段、机位或特效层…"></textarea></div><div class="queue-actions"><button class="primary-button" id="addQueueItem" type="button">加入队列</button></div></aside></div></section>`
   }
 
   function renderTech() {
@@ -536,7 +655,7 @@
 
   function renderActiveTab() {
     const panel = $('#tabPanel')
-    panel.innerHTML = activeTab === 'events' ? renderEvents() : activeTab === 'shots' ? renderShots() : activeTab === 'rhythm' ? renderRhythm() : activeTab === 'queue' ? renderQueue() : renderTech()
+    panel.innerHTML = activeTab === 'audit' ? renderAudit() : activeTab === 'events' ? renderEvents() : activeTab === 'shots' ? renderShots() : activeTab === 'rhythm' ? renderRhythm() : activeTab === 'queue' ? renderQueue() : renderTech()
   }
 
   function renderAll() {
@@ -544,8 +663,11 @@
     statusBanner()
     renderSummary()
     initializeVideos()
+    const hasAudit = Boolean(auditBundle()?.review_status)
     const hasEvents = events().length > 0
+    $('#auditTab').hidden = !hasAudit
     $('#eventsTab').hidden = !hasEvents
+    if (!hasAudit && activeTab === 'audit') activeTab = hasEvents ? 'events' : 'shots'
     if (!hasEvents && activeTab === 'events') activeTab = 'shots'
     const hashId = decodeURIComponent(location.hash.replace(/^#/, ''))
     if (!events().some((event) => event.event_id === selectedEventId)) selectedEventId = events().some((event) => event.event_id === hashId) ? hashId : events()[0]?.event_id || ''
@@ -649,6 +771,50 @@
     markDirty()
   }
 
+  function setEventVerdict(eventId, status) {
+    if (!['match', 'partial', 'difference', 'uncertain'].includes(status)) return
+    const review = ensureEventReview(eventId)
+    review.human_status = status
+    review.status = status
+    review.severity = status === 'match' ? 'none' : status === 'difference' ? 'high' : 'medium'
+    markDirty()
+    renderSummary()
+    renderActiveTab()
+  }
+
+  function addEventFeedback(eventId) {
+    const text = $('#feedbackText')?.value.trim()
+    if (!text) { toast('请先写下要补充或纠正的事实'); return }
+    const review = ensureEventReview(eventId)
+    review.feedback_entries.push({
+      id: queueId('FB'),
+      kind: $('#feedbackKind')?.value || 'missing',
+      axis: $('#feedbackAxis')?.value || 'other',
+      stage_id: $('#feedbackStage')?.value || '',
+      text,
+      status: 'open',
+      created_at: new Date().toISOString(),
+    })
+    markDirty()
+    renderSummary()
+    renderActiveTab()
+    toast('人工反馈已加入')
+  }
+
+  function removeEventFeedback(eventId, index) {
+    const entries = ensureEventReview(eventId).feedback_entries
+    if (!entries[index]) return
+    entries.splice(index, 1)
+    markDirty()
+    renderSummary()
+    renderActiveTab()
+  }
+
+  async function saveAndSelectNext() {
+    const saved = await saveReview(true)
+    if (saved) selectAdjacent(1)
+  }
+
   function updateEventStageReview(target) {
     const eventId = target.dataset.eventId
     const stageId = target.dataset.stageId
@@ -670,6 +836,21 @@
     renderMonitorSelection()
     $('#monitor').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
     if (autoplay) void togglePlayback()
+  }
+
+  function setAuditShotWindow(shotId) {
+    const shot = (auditBundle()?.shots || []).find((item) => item.shot_id === shotId)
+    const event = events().find((item) => item.event_id === shot?.segment_id)
+    if (!shot || !event) return
+    selectedEventId = event.event_id
+    monitorSelection = { type: 'event', id: event.event_id }
+    monitorWindow = {
+      source: { start_sec: shot.source_start_sec, end_sec: shot.source_end_sec, duration_sec: Math.max(.001, shot.source_end_sec - shot.source_start_sec) },
+      remake: { start_sec: shot.candidate_start_sec, end_sec: shot.candidate_end_sec, duration_sec: Math.max(.001, shot.candidate_end_sec - shot.candidate_start_sec) },
+      label: `${shot.shot_id} · ${shot.alignment_basis === 'manual_dense_review' ? '人工密集帧范围' : '段内插值定位'}`,
+    }
+    renderMonitorSelection()
+    $('#monitor').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
   }
 
   function updateDimensionReview(target) {
@@ -710,7 +891,27 @@
     renderActiveTab()
   }
 
+  function openEventReview(eventId) {
+    activeTab = 'events'
+    $$('.tabs button').forEach((button) => button.classList.toggle('on', button.dataset.tab === activeTab))
+    selectEvent(eventId, { scroll: true })
+  }
+
   $('#tabPanel').addEventListener('click', (event) => {
+    const verdict = event.target.closest('[data-event-verdict]')
+    if (verdict) { setEventVerdict(verdict.dataset.eventId, verdict.dataset.eventVerdict); return }
+    const addFeedback = event.target.closest('[data-add-event-feedback]')
+    if (addFeedback) { addEventFeedback(addFeedback.dataset.addEventFeedback); return }
+    const removeFeedback = event.target.closest('[data-remove-feedback]')
+    if (removeFeedback) { removeEventFeedback(removeFeedback.dataset.eventId, Number(removeFeedback.dataset.removeFeedback)); return }
+    const saveNext = event.target.closest('[data-save-next]')
+    if (saveNext) { void saveAndSelectNext(); return }
+    const openReview = event.target.closest('[data-open-event-review]')
+    if (openReview) { openEventReview(openReview.dataset.openEventReview); return }
+    const auditFilterButton = event.target.closest('[data-audit-filter]')
+    if (auditFilterButton) { auditFilter = auditFilterButton.dataset.auditFilter; renderActiveTab(); return }
+    const auditShot = event.target.closest('[data-audit-shot]')
+    if (auditShot) { setAuditShotWindow(auditShot.dataset.auditShot); return }
     const eventButton = event.target.closest('[data-select-event]')
     if (eventButton) { selectEvent(eventButton.dataset.selectEvent); return }
     const eventStep = event.target.closest('[data-event-step]')
@@ -759,6 +960,10 @@
     activeTab = button.dataset.tab
     $$('.tabs button').forEach((item) => item.classList.toggle('on', item === button))
     if (activeTab === 'events' && selectedEvent()) {
+      monitorSelection = { type: 'event', id: selectedEvent().event_id }
+      monitorWindow = null
+      renderMonitorSelection()
+    } else if (activeTab === 'audit' && selectedEvent()) {
       monitorSelection = { type: 'event', id: selectedEvent().event_id }
       monitorWindow = null
       renderMonitorSelection()
