@@ -1,6 +1,6 @@
 # 拉片超人
 
-> 这是私人 Studio 仓库，用于内部研发、发布前验证和私人工作流记录。可公开复用的核心代码维护在 [cd112233/lapian-chaoren](https://github.com/cd112233/lapian-chaoren)；不要把本仓库直接改为公开。边界和同步规则见 [STUDIO.md](STUDIO.md)。
+> Evidence-first video breakdown and human-AI learning workstation —— 开源核心仓库，可独立运行，不依赖任何私人仓库或数据。公开与私人数据的边界见 [docs/public-private-boundary.md](docs/public-private-boundary.md)。
 
 把打斗参考视频拆成可重制、可审核、可交接的镜头工程。
 
