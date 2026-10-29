@@ -25,6 +25,19 @@
 
   const projectId = () => comparison.project_id || bootstrap.project_id || ''
   const comparisonId = () => comparison.comparison_id || bootstrap.comparison_id || ''
+  // Write requests need the workbench's per-process token (X-Workbench-Token).
+  // It is fetched from the same-origin /api/session endpoint, which other sites cannot read.
+  const TOKEN_HEADER = 'X-Workbench-Token'
+  let workbenchToken = ''
+  async function ensureWorkbenchToken() {
+    if (workbenchToken) return workbenchToken
+    const response = await fetch('/api/session', { cache: 'no-store' })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.token) throw new Error(data.error || `无法读取本地工作台令牌：HTTP ${response.status}`)
+    workbenchToken = String(data.token)
+    return workbenchToken
+  }
+  const jsonWriteHeaders = (token) => ({ 'Content-Type': 'application/json', [TOKEN_HEADER]: token })
   const apiBase = () => `/api/projects/${encodeURIComponent(projectId())}/comparisons/${encodeURIComponent(comparisonId())}`
   const pairs = () => comparison.alignment?.pairs || []
   const events = () => comparison.event_segments?.events || []
@@ -121,7 +134,7 @@
     try {
       const response = await fetch(`${apiBase()}/review`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonWriteHeaders(await ensureWorkbenchToken()),
         body: JSON.stringify({ review: ensureReview() }),
       })
       const data = await response.json().catch(() => ({}))
@@ -613,7 +626,7 @@
     button.textContent = '正在应用…'
     $('#alignmentError').hidden = true
     try {
-      const response = await fetch(`${apiBase()}/alignment`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alignment }) })
+      const response = await fetch(`${apiBase()}/alignment`, { method: 'PUT', headers: jsonWriteHeaders(await ensureWorkbenchToken()), body: JSON.stringify({ alignment }) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `应用失败：HTTP ${response.status}`)
       comparison = data.comparison || comparison
@@ -811,9 +824,10 @@
 
   window.addEventListener('beforeunload', () => {
     if (!reviewDirty) return
-    fetch(`${apiBase()}/review`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ review: ensureReview() }), keepalive: true }).catch(() => {})
+    fetch(`${apiBase()}/review`, { method: 'PUT', headers: jsonWriteHeaders(workbenchToken), body: JSON.stringify({ review: ensureReview() }), keepalive: true }).catch(() => {})
   })
 
   renderAll()
+  ensureWorkbenchToken().catch(() => {})
   loadComparison()
 })()

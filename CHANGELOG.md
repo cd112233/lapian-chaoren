@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Workbench 校验 `Host` 头，只接受 `127.0.0.1` / `localhost` / `[::1]` 加服务端口，阻断 DNS rebinding。
+- Workbench 所有写操作（`POST`/`PUT`/`PATCH`/`DELETE`）要求每进程随机令牌 `X-Workbench-Token`（`hmac.compare_digest` 比较）；令牌注入片库页面并可由同源 `GET /api/session` 读取。片库页面与复刻对比页已自动携带令牌。
+- Workbench 写请求若带 `Origin` 必须同源；拒绝 `text/plain`、表单与 `multipart/form-data` 等可跨站发送的请求类型（415），JSON 接口要求 `application/json`。
+- Workbench 上传前检查剩余磁盘空间，不足“文件大小 + 1 GB”时返回 507。
+- Workbench `--host` 不是回环地址时拒绝启动，除非显式传入 `--allow-remote`（会打印警告）。
+- AI 网关不再接受 `Origin: null`（可由任意网站的沙箱 iframe 伪造），来源收紧为本地片库端口的精确来源；新增 `--workbench-port`、`--allowed-origin`、`--allow-file-origin`（仅示例用，`make advisor-demo` 默认开启）。AI 网关同样校验 `Host`，`POST` 要求 `application/json`。
+- AI 网关 `--api-key` 参数弃用：仍可用但会警告其在进程列表中可见，请改用 `AI_ADVISOR_API_KEY` 环境变量。
+
+### Fixed
+
+- 公开边界测试改为只扫描 `git ls-files` 中的文件，并排除 `.venv`、`venv`、`node_modules`、`outputs`、`.git`，按 README 创建虚拟环境后 `make test` 不再误报。
+- README 快速开始中的目录名修正为 `lapian-chaoren`。
+
+### Changed
+
+- 在本版本之前生成的复刻对比页（`comparison.html`）在通过片库打开时会自动按新脚本重建，以便携带写入令牌。
+
 ## 0.4.0 - 2026-07-23
 
 ### Added

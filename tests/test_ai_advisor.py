@@ -98,9 +98,16 @@ class AIAdvisorTests(unittest.TestCase):
     def test_browser_origin_allowlist(self) -> None:
         module = load_module()
         self.assertTrue(module.is_allowed_browser_origin(None))
-        self.assertTrue(module.is_allowed_browser_origin("null"))
+        self.assertFalse(module.is_allowed_browser_origin("null"))
+        self.assertTrue(module.is_allowed_browser_origin("null", allow_file_origin=True))
         self.assertTrue(module.is_allowed_browser_origin("http://127.0.0.1:8765"))
         self.assertTrue(module.is_allowed_browser_origin("http://localhost:8765"))
+        self.assertTrue(module.is_allowed_browser_origin("http://[::1]:8765"))
+        self.assertFalse(module.is_allowed_browser_origin("http://127.0.0.1:9999"))
+        self.assertFalse(module.is_allowed_browser_origin("http://localhost"))
+        self.assertTrue(
+            module.is_allowed_browser_origin("http://127.0.0.1:9000", module.workbench_origins([9000]))
+        )
         self.assertFalse(module.is_allowed_browser_origin("https://example.com"))
         self.assertFalse(module.is_allowed_browser_origin("http://127.0.0.1.example.com"))
 

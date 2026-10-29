@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="lapian-workbench-token" content="__LAPIAN_WORKBENCH_TOKEN__">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>拉片超人 · 片库与导入</title>
 <style>
@@ -160,6 +161,10 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 (() => {
   'use strict'
   const $ = (selector) => document.querySelector(selector)
+  // Per-process token injected by workbench_server.py; required on every write request.
+  const TOKEN_HEADER = 'X-Workbench-Token'
+  const WORKBENCH_TOKEN = document.querySelector('meta[name="lapian-workbench-token"]')?.content || ''
+  const writeHeaders = (extra = {}) => ({ ...extra, [TOKEN_HEADER]: WORKBENCH_TOKEN })
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char])
   const allowed = new Set(['3g2', '3gp', 'avi', 'asf', 'f4v', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mxf', 'ogv', 'rm', 'rmvb', 'ts', 'vob', 'webm', 'wmv'])
   let selectedFile = null
@@ -282,7 +287,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     button.textContent = '正在选择…'
     $('#locationError').hidden = true
     try {
-      const response = await fetch('/api/settings/select-projects-root', { method: 'POST' })
+      const response = await fetch('/api/settings/select-projects-root', { method: 'POST', headers: writeHeaders() })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `选择失败：HTTP ${response.status}`)
       if (!data.cancelled && data.path) {
@@ -307,7 +312,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     try {
       const response = await fetch('/api/settings/projects-root', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: writeHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ path }),
       })
       const data = await response.json().catch(() => ({}))
@@ -417,6 +422,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     const request = new XMLHttpRequest()
     request.open('POST', '/api/projects')
     request.setRequestHeader('Content-Type', uploadFile.type || 'application/octet-stream')
+    request.setRequestHeader(TOKEN_HEADER, WORKBENCH_TOKEN)
     request.setRequestHeader('X-Filename', encodeURIComponent(uploadFile.name))
     request.setRequestHeader('X-Project-Title', encodeURIComponent(projectTitle))
     request.upload.addEventListener('progress', (event) => {
@@ -462,7 +468,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     button.textContent = '正在删除'
     $('#deleteError').hidden = true
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(deleteProjectId)}`, { method: 'DELETE' })
+      const response = await fetch(`/api/projects/${encodeURIComponent(deleteProjectId)}`, { method: 'DELETE', headers: writeHeaders() })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `删除失败：HTTP ${response.status}`)
       if (activeProjectId === deleteProjectId) activeProjectId = null
@@ -594,6 +600,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
     const request = new XMLHttpRequest()
     request.open('POST', `/api/projects/${encodeURIComponent(comparisonProjectId)}/comparisons`)
     request.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    request.setRequestHeader(TOKEN_HEADER, WORKBENCH_TOKEN)
     request.setRequestHeader('X-Filename', encodeURIComponent(file.name))
     request.setRequestHeader('X-Comparison-Title', encodeURIComponent(title))
     request.upload.addEventListener('progress', (event) => { if (event.lengthComputable) updateComparisonProgress({ title }, Math.round(event.loaded / event.total * 100)) })
@@ -626,7 +633,7 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
       return
     }
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(comparisonProjectId)}/comparisons/${encodeURIComponent(comparisonId)}`, { method: 'DELETE' })
+      const response = await fetch(`/api/projects/${encodeURIComponent(comparisonProjectId)}/comparisons/${encodeURIComponent(comparisonId)}`, { method: 'DELETE', headers: writeHeaders() })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `删除失败：HTTP ${response.status}`)
       armedComparisonDelete = null

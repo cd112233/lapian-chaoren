@@ -62,7 +62,17 @@ INITIAL_ANALYSIS_FIELDS = {
     "uncertainties",
 }
 VALID_CONFIDENCE = {"low", "medium", "high"}
-LOCAL_BROWSER_HOSTS = {"127.0.0.1", "localhost", "::1"}
+LOOPBACK_HOST_NAMES = ("127.0.0.1", "localhost", "[::1]")
+DEFAULT_WORKBENCH_PORT = 8765
+
+
+def workbench_origins(ports: Iterable[int]) -> frozenset[str]:
+    """Exact browser origins of the local workbench pages allowed to call the advisor."""
+
+    return frozenset(f"http://{name}:{int(port)}" for port in ports for name in LOOPBACK_HOST_NAMES)
+
+
+DEFAULT_ALLOWED_ORIGINS = workbench_origins([DEFAULT_WORKBENCH_PORT])
 
 
 @dataclass(frozen=True)
@@ -80,6 +90,8 @@ class AdvisorConfig:
     projects_env_root: str = ""
     timeout_seconds: int = 120
     max_body_bytes: int = 1_000_000
+    allowed_origins: frozenset[str] = DEFAULT_ALLOWED_ORIGINS
+    allow_file_origin: bool = False
 
     def current_asset_root(self) -> Path | None:
         if self.asset_root is not None:
@@ -121,27 +133,25 @@ def _clean_text(value: Any, limit: int) -> str:
     return value.strip()[:limit]
 
 
-def is_allowed_browser_origin(origin: str | None) -> bool:
-    """Allow local review pages while rejecting cross-site localhost requests."""
+def is_allowed_browser_origin(
+    origin: str | None,
+    allowed_origins: Iterable[str] = DEFAULT_ALLOWED_ORIGINS,
+    *,
+    allow_file_origin: bool = False,
+) -> bool:
+    """Allow only the configured local workbench origins.
 
-    if not origin or origin == "null":
+    A missing Origin means a non-browser client or a same-origin GET. ``null``
+    (``file://`` pages, but also sandboxed iframes on *any* website) is refused
+    unless explicitly enabled with ``--allow-file-origin``.
+    """
+
+    if origin is None or origin == "":
         return True
-    try:
-        parsed = urlparse(origin)
-        port = parsed.port
-    except ValueError:
-        return False
-    return (
-        parsed.scheme in {"http", "https"}
-        and parsed.hostname in LOCAL_BROWSER_HOSTS
-        and parsed.username is None
-        and parsed.password is None
-        and parsed.path in {"", "/"}
-        and not parsed.params
-        and not parsed.query
-        and not parsed.fragment
-        and (port is None or 0 < port <= 65535)
-    )
+    if origin == "null":
+        return allow_file_origin
+    normalized = origin.strip().lower().rstrip("/")
+    return normalized in {item.strip().lower().rstrip("/") for item in allowed_origins}
 
 
 def validate_payload(value: Any) -> dict[str, Any]:
@@ -682,6 +692,14 @@ class AdvisorHTTPServer(ThreadingHTTPServer):
     system_prompt: str
     initial_prompt: str
 
+    def allowed_hosts(self) -> set[str]:
+        port = self.server_address[1]
+        names = set(LOOPBACK_HOST_NAMES)
+        bind_host = str(self.server_address[0])
+        if bind_host and bind_host not in {"0.0.0.0", "::"}:
+            names.add(f"[{bind_host}]" if ":" in bind_host else bind_host)
+        return {f"{name}:{port}" for name in names} | (names if port == 80 else set())
+
 
 class AdvisorHandler(BaseHTTPRequestHandler):
     server: AdvisorHTTPServer
@@ -690,18 +708,33 @@ class AdvisorHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
+    def _origin_allowed(self, origin: str | None) -> bool:
+        config = self.server.config
+        return is_allowed_browser_origin(
+            origin,
+            config.allowed_origins,
+            allow_file_origin=config.allow_file_origin,
+        )
+
     def _cors_headers(self) -> None:
         origin = self.headers.get("Origin", "")
-        if origin and is_allowed_browser_origin(origin):
-            self.send_header("Access-Control-Allow-Origin", "null" if origin == "null" else origin)
+        if origin and self._origin_allowed(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def _reject_untrusted_origin(self) -> bool:
-        if is_allowed_browser_origin(self.headers.get("Origin")):
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host not in self.server.allowed_hosts():
+            # Blocks DNS-rebinding pages that reach this port under their own hostname.
+            self.close_connection = True
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "host is not allowed"})
+            return True
+        if self._origin_allowed(self.headers.get("Origin")):
             return False
+        self.close_connection = True
         self._send_json(HTTPStatus.FORBIDDEN, {"error": "browser origin is not allowed"})
         return True
 
@@ -749,6 +782,12 @@ class AdvisorHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path not in {"/api/advisor", "/api/analyze-shot"}:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            # Refuse CORS "simple requests" (text/plain, form posts) that skip preflight.
+            self.close_connection = True
+            self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "Content-Type must be application/json"})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -833,11 +872,36 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model", default=os.getenv("AI_ADVISOR_MODEL", ""))
     parser.add_argument("--base-url", default=os.getenv("AI_ADVISOR_BASE_URL", ""))
-    parser.add_argument("--api-key", default=os.getenv("AI_ADVISOR_API_KEY", ""))
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help="DEPRECATED: visible in process lists; set AI_ADVISOR_API_KEY instead",
+    )
     parser.add_argument("--prompt", type=Path, default=DEFAULT_PROMPT)
     parser.add_argument("--initial-prompt", type=Path, default=DEFAULT_INITIAL_PROMPT)
     parser.add_argument("--asset-root", type=Path, default=os.getenv("AI_ADVISOR_ASSET_ROOT"))
     parser.add_argument("--settings-path", type=Path, default=Path(settings_path) if settings_path else None)
+    parser.add_argument(
+        "--workbench-port",
+        type=int,
+        action="append",
+        default=None,
+        help="Port of the local workbench whose pages may call this gateway (repeatable; default "
+        "LAPIAN_WORKBENCH_PORT or 8765)",
+    )
+    parser.add_argument(
+        "--allowed-origin",
+        action="append",
+        default=[],
+        help="Extra exact browser origin allowed to call this gateway, e.g. http://127.0.0.1:9000 (repeatable)",
+    )
+    parser.add_argument(
+        "--allow-file-origin",
+        action="store_true",
+        default=os.getenv("AI_ADVISOR_ALLOW_FILE_ORIGIN", "").strip().lower() in {"1", "true", "yes"},
+        help="Also accept Origin: null (review pages opened via file://). Any website can send this origin "
+        "from a sandboxed iframe, so only enable it for demos.",
+    )
     parser.add_argument(
         "--timeout",
         type=int,
@@ -860,19 +924,42 @@ def config_from_args(args: argparse.Namespace) -> AdvisorConfig:
     if asset_root and not asset_root.is_dir():
         raise SystemExit(f"asset root is not a directory: {asset_root}")
     project_settings = None if asset_root else LocalSettingsStore(args.settings_path)
+    api_key = os.getenv("AI_ADVISOR_API_KEY", "")
+    if args.api_key is not None:
+        print(
+            "WARNING: --api-key is deprecated because command-line arguments are visible to other local "
+            "users via process lists (ps, /proc). Set AI_ADVISOR_API_KEY in the environment instead.",
+            file=sys.stderr,
+        )
+        api_key = args.api_key
+    ports = args.workbench_port or [int(os.getenv("LAPIAN_WORKBENCH_PORT", str(DEFAULT_WORKBENCH_PORT)))]
+    extra_origins = []
+    for origin in args.allowed_origin:
+        parsed = urlparse(origin.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path not in {"", "/"}:
+            raise SystemExit(f"invalid --allowed-origin (expected scheme://host:port): {origin}")
+        extra_origins.append(f"{parsed.scheme}://{parsed.netloc}".lower())
+    if args.allow_file_origin:
+        print(
+            "WARNING: --allow-file-origin accepts Origin: null, which sandboxed iframes on any website can "
+            "also send. Use it only for local demos.",
+            file=sys.stderr,
+        )
     return AdvisorConfig(
         host=args.host,
         port=args.port,
         provider=provider,
         model=model,
         base_url=base_url,
-        api_key=args.api_key,
+        api_key=api_key,
         prompt_path=Path(args.prompt).expanduser().resolve(),
         initial_prompt_path=Path(args.initial_prompt).expanduser().resolve(),
         asset_root=asset_root,
         project_settings=project_settings,
         projects_env_root=os.getenv("LAPIAN_PROJECTS_ROOT", ""),
         timeout_seconds=max(10, args.timeout),
+        allowed_origins=workbench_origins(ports) | frozenset(extra_origins),
+        allow_file_origin=bool(args.allow_file_origin),
     )
 
 
