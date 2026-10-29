@@ -182,12 +182,14 @@ class WorkbenchServerTests(unittest.TestCase):
             try:
                 idle_request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/projects/{idle_id}",
+                    headers={"X-Workbench-Token": server.api_token},
                     method="DELETE",
                 )
                 with urllib.request.urlopen(idle_request) as response:
                     deleted = json.load(response)["deleted"]
                 active_request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/projects/{active_id}",
+                    headers={"X-Workbench-Token": server.api_token},
                     method="DELETE",
                 )
                 with self.assertRaises(urllib.error.HTTPError) as blocked:
@@ -226,7 +228,7 @@ class WorkbenchServerTests(unittest.TestCase):
                 switch_request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/settings/projects-root",
                     data=json.dumps({"path": str(new_root)}).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
+                    headers={"Content-Type": "application/json", "X-Workbench-Token": server.api_token},
                     method="PUT",
                 )
                 with urllib.request.urlopen(switch_request) as response:
@@ -238,7 +240,7 @@ class WorkbenchServerTests(unittest.TestCase):
                 blocked_request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/settings/projects-root",
                     data=json.dumps({"path": str(blocked_root)}).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
+                    headers={"Content-Type": "application/json", "X-Workbench-Token": server.api_token},
                     method="PUT",
                 )
                 with self.assertRaises(urllib.error.HTTPError) as blocked:
@@ -276,7 +278,7 @@ class WorkbenchServerTests(unittest.TestCase):
             try:
                 request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/settings/select-projects-root",
-                    data=b"",
+                    headers={"X-Workbench-Token": server.api_token},
                     method="POST",
                 )
                 with urllib.request.urlopen(request) as response:
@@ -305,7 +307,12 @@ class WorkbenchServerTests(unittest.TestCase):
                 request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/projects",
                     data=b"small-video",
-                    headers={"X-Filename": "fight.mp4", "X-Project-Title": "Learning Test"},
+                    headers={
+                        "Content-Type": "video/mp4",
+                        "X-Filename": "fight.mp4",
+                        "X-Project-Title": "Learning Test",
+                        "X-Workbench-Token": server.api_token,
+                    },
                     method="POST",
                 )
                 with urllib.request.urlopen(request) as response:
@@ -349,6 +356,7 @@ class WorkbenchServerTests(unittest.TestCase):
                     headers={
                         "Content-Type": "video/x-custom",
                         "X-Filename": "camera-capture.data",
+                        "X-Workbench-Token": server.api_token,
                     },
                     method="POST",
                 )
@@ -386,7 +394,12 @@ class WorkbenchServerTests(unittest.TestCase):
                 request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons",
                     data=b"remake-video",
-                    headers={"X-Filename": "remake.mov", "X-Comparison-Title": "V1"},
+                    headers={
+                        "Content-Type": "video/quicktime",
+                        "X-Filename": "remake.mov",
+                        "X-Comparison-Title": "V1",
+                        "X-Workbench-Token": server.api_token,
+                    },
                     method="POST",
                 )
                 with urllib.request.urlopen(request) as response:
@@ -402,6 +415,7 @@ class WorkbenchServerTests(unittest.TestCase):
                     detail = json.load(response)["comparison"]
                 delete_request = urllib.request.Request(
                     f"http://127.0.0.1:{port}/api/projects/{project_id}/comparisons/{comparison_id}",
+                    headers={"X-Workbench-Token": server.api_token},
                     method="DELETE",
                 )
                 with urllib.request.urlopen(delete_request) as response:
@@ -460,7 +474,7 @@ class WorkbenchServerTests(unittest.TestCase):
                             }
                         }
                     ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
+                    headers={"Content-Type": "application/json", "X-Workbench-Token": server.api_token},
                     method="PUT",
                 )
                 with urllib.request.urlopen(request) as response:

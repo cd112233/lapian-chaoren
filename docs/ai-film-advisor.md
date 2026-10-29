@@ -24,7 +24,7 @@ AI 影像导师是当前镜头上下文感知的专业问答层。它面向“�
 2. 接收当前镜头上下文；
 3. 仅在配置的素材根目录内读取首中尾帧和接触表；
 4. 调用模型并以 NDJSON 流式返回；
-5. 只为 `file://` 与本机 HTTP 页面提供 CORS 响应，拒绝其他网站借本地端口调用；
+5. 只为本地片库页面（`http://127.0.0.1:<片库端口>`、`http://localhost:<片库端口>`）提供 CORS 响应，拒绝其他网站借本地端口调用；`file://` 页面需显式开启 `--allow-file-origin`；
 6. 通过 `/api/analyze-shot` 返回可进入人机差异审核的结构化初判。
 
 默认只监听 `127.0.0.1`，不会主动把端口暴露到局域网。
@@ -37,6 +37,8 @@ AI 影像导师是当前镜头上下文感知的专业问答层。它面向“�
 make demo
 make advisor-demo
 ```
+
+`make advisor-demo` 会带上 `--allow-file-origin`，以便直接用 `file://` 打开的示例页调用模拟导师。该开关同时会放行任何网站沙箱 iframe 发出的 `Origin: null`，只建议在示例/模拟模式下使用；处理真实项目时请通过本地片库（`make workbench`）打开审片页。
 
 打开 `examples/demo/review_demo.html`，先在“舒适度 → AI 影像导师”中选择“启用”，再点击镜头栏的“问 AI”或按 `A`。
 
@@ -99,7 +101,11 @@ python3 src/ai_advisor_server.py \
 - 图片路径必须位于 `AI_ADVISOR_ASSET_ROOT` 内，目录穿越会被拒绝。未显式配置该变量或
   `--asset-root` 时，网关会读取片库的用户保存位置设置，并随网页切换实时跟随；这使得
   “保存位置”不需要再额外手动同步 AI 素材目录。
-- 浏览器来源只允许 `null`（本地文件）、`localhost`、`127.0.0.1` 和 `::1`；其他来源返回 403。
+- 浏览器来源只允许本地片库的精确来源：`http://127.0.0.1:<端口>`、`http://localhost:<端口>`、`http://[::1]:<端口>`，端口默认取 `LAPIAN_WORKBENCH_PORT` 或 8765，可用 `--workbench-port`（可重复）或 `--allowed-origin` 追加；其他来源（包括 `Origin: null`）返回 403，且不会回显到 CORS 头。
+- `Origin: null` 仅在显式传入 `--allow-file-origin`（或 `AI_ADVISOR_ALLOW_FILE_ORIGIN=1`）时放行，并在启动时打印警告。
+- `Host` 头必须是本机回环地址加网关端口，防止 DNS rebinding；`POST` 必须使用 `Content-Type: application/json`。
+- API Key 只从 `AI_ADVISOR_API_KEY` 环境变量读取；`--api-key` 已弃用（会出现在 `ps` 等进程列表中），传入时会打印警告。
+- 当前 AI 网关没有每进程令牌：审片页与网关跨端口（8765 → 8766），无法在不把令牌写入生成的 HTML 的前提下安全下发，因此依靠精确来源白名单 + Host 校验 + JSON 内容类型防护。
 - 单张图片上限 6 MB，最多附带四张。
 - AI 不应虚构焦段、光比、色温、LUT 或节点参数。
 - 静帧只能提供构图、光色和空间证据；连续运镜仍应回看视频。

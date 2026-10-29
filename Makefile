@@ -12,7 +12,7 @@ demo:
 	$(PYTHON) src/build_review_page.py examples/demo/demo_shots.yaml --output examples/demo/review_demo.html
 
 advisor-demo:
-	$(PYTHON) src/ai_advisor_server.py --provider mock --asset-root examples/demo
+	$(PYTHON) src/ai_advisor_server.py --provider mock --asset-root examples/demo --allow-file-origin
 
 test:
 	$(PYTHON) -m unittest discover -s tests -p 'test_*.py' -v

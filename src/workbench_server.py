@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
+import ipaddress
 import json
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -57,6 +60,20 @@ ALLOWED_VIDEO_SUFFIXES = VIDEO_SUFFIXES
 CHUNK_SIZE = 1024 * 1024
 MAX_SETTINGS_BODY_BYTES = 16 * 1024
 MAX_REVIEW_BODY_BYTES = 1024 * 1024
+# Local-server security model (see SECURITY.md):
+# - Host header must name a loopback address with the server's port
+#   (blocks DNS-rebinding pages from talking to the API).
+# - State-changing requests must carry the per-process token in
+#   ``X-Workbench-Token``; a custom header also forces a CORS preflight, which
+#   this server never answers, so cross-site pages cannot send it.
+# - A present Origin header must be this server's own origin.
+# - "Simple request" body types that HTML forms can send cross-site are refused.
+TOKEN_HEADER = "X-Workbench-Token"
+TOKEN_PLACEHOLDER = "__LAPIAN_WORKBENCH_TOKEN__"
+LOOPBACK_HOST_NAMES = ("127.0.0.1", "localhost", "[::1]")
+FORM_CONTENT_TYPES = {"text/plain", "application/x-www-form-urlencoded", "multipart/form-data"}
+UPLOAD_DISK_MARGIN_BYTES = 1024 * 1024 * 1024
+COMPARISON_PAGE_PATH = re.compile(r"comparisons/(cmp-[0-9]{8}-[0-9]{6}-[a-f0-9]{8})/comparison\.html")
 BUSY_PROJECT_STATUSES = {"uploading", "queued", "adapting", "analyzing", "building"}
 BUSY_COMPARISON_STATUSES = {
     "uploading",
@@ -67,6 +84,32 @@ BUSY_COMPARISON_STATUSES = {
     "aligning",
     "building",
 }
+
+
+def is_loopback_host(host: str) -> bool:
+    value = (host or "").strip().strip("[]").lower()
+    if value == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def is_wildcard_host(host: str) -> bool:
+    return (host or "").strip().strip("[]") in {"", "0.0.0.0", "::"}
+
+
+def free_disk_bytes(path: Path) -> int | None:
+    """Free bytes on the filesystem holding ``path`` (or its nearest parent)."""
+
+    candidate = path
+    while not candidate.exists() and candidate.parent != candidate:
+        candidate = candidate.parent
+    try:
+        return shutil.disk_usage(candidate).free
+    except OSError:
+        return None
 
 
 def utc_now() -> str:
@@ -812,6 +855,24 @@ class WorkbenchHTTPServer(ThreadingHTTPServer):
         self.settings_store = LocalSettingsStore()
         self.settings_locked = False
         self.default_projects_root = DEFAULT_PROJECTS_ROOT.resolve()
+        self.api_token = secrets.token_urlsafe(32)
+        self.extra_allowed_hosts: set[str] = set()
+        self.check_host_header = True
+        self.upload_disk_margin_bytes = UPLOAD_DISK_MARGIN_BYTES
+
+    def allowed_hosts(self) -> set[str]:
+        port = self.server_address[1]
+        names = {*LOOPBACK_HOST_NAMES, *self.extra_allowed_hosts}
+        hosts = {f"{name}:{port}" for name in names}
+        if port == 80:
+            hosts |= names
+        return hosts
+
+    def allowed_origins(self) -> set[str]:
+        return {f"http://{host}" for host in self.allowed_hosts()}
+
+    def token_matches(self, candidate: str | None) -> bool:
+        return hmac.compare_digest((candidate or "").encode("utf-8"), self.api_token.encode("utf-8"))
 
     def current_store(self) -> ProjectStore:
         with self._state_lock:
@@ -988,7 +1049,81 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
         )
 
+    def _reject(self, status: HTTPStatus, message: str) -> None:
+        # The request body (if any) is left unread, so never reuse the socket.
+        self.close_connection = True
+        body = (json.dumps({"error": message}, ensure_ascii=False) + "\n").encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _host_allowed(self) -> bool:
+        if not self.server.check_host_header:
+            return True
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host in self.server.allowed_hosts():
+            return True
+        self._reject(HTTPStatus.FORBIDDEN, "Host 不被允许：请通过 http://127.0.0.1:<端口> 访问本地工作台。")
+        return False
+
+    def _write_allowed(self) -> bool:
+        """Gate every state-changing request (POST/PUT/PATCH/DELETE)."""
+
+        if not self._host_allowed():
+            return False
+        origin = self.headers.get("Origin")
+        if origin is not None and origin.strip().lower().rstrip("/") not in self.server.allowed_origins():
+            self._reject(HTTPStatus.FORBIDDEN, "跨站请求被拒绝。")
+            return False
+        content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type in FORM_CONTENT_TYPES:
+            self._reject(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "不支持该请求类型。")
+            return False
+        if not self.server.token_matches(self.headers.get(TOKEN_HEADER)):
+            self._reject(HTTPStatus.FORBIDDEN, "缺少或无效的工作台令牌，请刷新本地工作台页面。")
+            return False
+        return True
+
+    def _upload_space_available(self, root: Path, content_length: int) -> bool:
+        free = free_disk_bytes(root)
+        if free is None or free >= content_length + self.server.upload_disk_margin_bytes:
+            return True
+        self._reject(
+            HTTPStatus.INSUFFICIENT_STORAGE,
+            "保存位置剩余空间不足（需要文件大小外加约 1 GB 处理余量），请清理磁盘或切换保存位置。",
+        )
+        return False
+
+    def _serve_workbench(self) -> None:
+        if not WORKBENCH_HTML.is_file():
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "file not found"})
+            return
+        document = WORKBENCH_HTML.read_text(encoding="utf-8").replace(TOKEN_PLACEHOLDER, self.server.api_token)
+        self._send_bytes(HTTPStatus.OK, document.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _refresh_legacy_comparison_page(self, project_id: str, relpath: str, target: Path) -> None:
+        """Rebuild comparison pages generated before token auth so saving keeps working."""
+
+        match = COMPARISON_PAGE_PATH.fullmatch(relpath)
+        if not match or not target.is_file():
+            return
+        try:
+            if TOKEN_HEADER in target.read_text(encoding="utf-8", errors="ignore"):
+                return
+            store = self.server.current_store()
+            build_comparison_page(store.comparison_manifest_path(project_id, match.group(1)), target)
+        except (OSError, ValueError, FileNotFoundError, json.JSONDecodeError, SystemExit):
+            pass
+
     def _read_json(self, *, max_bytes: int = MAX_SETTINGS_BODY_BYTES) -> dict[str, Any]:
+        content_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            raise ValueError("请求必须使用 Content-Type: application/json。")
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
@@ -1059,10 +1194,16 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._host_allowed():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         if path in {"/", "/index.html"}:
-            self._serve_file(WORKBENCH_HTML)
+            self._serve_workbench()
+            return
+        if path == "/api/session":
+            # Same-origin only: no CORS headers, and the Host check above blocks DNS rebinding.
+            self._send_json(HTTPStatus.OK, {"token": self.server.api_token, "header": TOKEN_HEADER})
             return
         if path == "/api/health":
             store = self.server.current_store()
@@ -1124,6 +1265,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             except (ValueError, FileNotFoundError):
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "project file not found"})
                 return
+            self._refresh_legacy_comparison_page(match.group(1), unquote(match.group(2)), target)
             self._serve_file(target)
             return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -1158,6 +1300,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             title = safe_title(self.headers.get("X-Comparison-Title", ""), default_title)
         except ValueError as error:
             self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": str(error)})
+            return
+        if not self._upload_space_available(store.project_root(project_id), content_length):
             return
         try:
             store = self.server.reserve_existing_project(project_id)
@@ -1261,6 +1405,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.ACCEPTED, {"comparison": manifest})
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._write_allowed():
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/settings/select-projects-root":
             if self.server.settings_locked:
@@ -1299,6 +1445,9 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             title = safe_title(self.headers.get("X-Project-Title", ""), filename)
         except ValueError as error:
             self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": str(error)})
+            return
+
+        if not self._upload_space_available(self.server.current_store().root, content_length):
             return
 
         project_id = new_project_id()
@@ -1384,6 +1533,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.ACCEPTED, {"project": manifest})
 
     def do_PUT(self) -> None:  # noqa: N802
+        if not self._write_allowed():
+            return
         path = urlparse(self.path).path
         alignment_match = re.fullmatch(
             r"/api/projects/([^/]+)/comparisons/([^/]+)/alignment",
@@ -1574,7 +1725,14 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             return
         self._send_json(HTTPStatus.OK, {"settings": settings})
 
+    def do_PATCH(self) -> None:  # noqa: N802
+        if not self._write_allowed():
+            return
+        self._send_json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method not allowed"})
+
     def do_DELETE(self) -> None:  # noqa: N802
+        if not self._write_allowed():
+            return
         path = urlparse(self.path).path
         comparison_match = re.fullmatch(r"/api/projects/([^/]+)/comparisons/([^/]+)", path)
         if comparison_match:
@@ -1644,6 +1802,11 @@ def parse_args() -> argparse.Namespace:
         default=float(os.getenv("LAPIAN_MAX_UPLOAD_GB", "20")),
     )
     parser.add_argument("--no-open", action="store_true", help="Do not open the project library in a browser")
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Allow binding --host to a non-loopback address (exposes local files to the network; not recommended)",
+    )
     return parser.parse_args()
 
 
@@ -1656,14 +1819,23 @@ def serve(
     settings_locked: bool,
     max_upload_bytes: int,
     open_browser: bool,
+    allow_remote: bool = False,
 ) -> None:
     server = WorkbenchHTTPServer((host, port), WorkbenchHandler)
+    if allow_remote and not is_loopback_host(host):
+        if is_wildcard_host(host):
+            # Remote clients reach us under an address we cannot predict; the
+            # per-process token still guards every state-changing request.
+            server.check_host_header = False
+        else:
+            server.extra_allowed_hosts.add(f"[{host}]" if ":" in host else host.lower())
     server.store = ProjectStore(projects_root)
     server.settings_store = settings_store
     server.settings_locked = settings_locked
     recovered = server.store.recover_interrupted()
     server.max_upload_bytes = max_upload_bytes
-    url = f"http://{host}:{server.server_address[1]}"
+    display_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    url = f"http://{display_host}:{server.server_address[1]}"
     print(f"Lapian local workbench: {url}")
     print(f"Projects root: {server.store.root}")
     if recovered:
@@ -1680,6 +1852,19 @@ def serve(
 
 def main() -> int:
     args = parse_args()
+    if not is_loopback_host(args.host):
+        if not args.allow_remote:
+            print(
+                f"Refusing to listen on non-loopback host {args.host!r}: the workbench serves local files "
+                "and has no user accounts. Use 127.0.0.1, or pass --allow-remote if you really need it.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            f"WARNING: --allow-remote is set; the workbench will listen on {args.host}. Anyone who can reach "
+            "this address can read project media. Put it behind TLS and real authentication.",
+            file=sys.stderr,
+        )
     settings_store = LocalSettingsStore(args.settings_path)
     projects_root = resolve_projects_root(
         cli_root=args.projects_root,
@@ -1695,6 +1880,7 @@ def main() -> int:
         settings_locked=args.projects_root is not None,
         max_upload_bytes=max_upload_bytes,
         open_browser=not args.no_open,
+        allow_remote=args.allow_remote,
     )
     return 0
 

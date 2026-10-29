@@ -97,7 +97,7 @@
 
 ```bash
 git clone https://github.com/cd112233/lapian-chaoren.git
-cd 拉片超人
+cd lapian-chaoren
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -109,7 +109,7 @@ pip install -r requirements.txt
 make workbench
 ```
 
-浏览器会打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)。拖入视频后，本地服务会依次生成：
+浏览器会打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)。请始终通过这个地址（或 `http://localhost:8765`）使用片库：页面会自动获取本次启动生成的随机写入令牌，其他主机名或跨站页面发起的写操作都会被拒绝（详见 [SECURITY.md](SECURITY.md)）。拖入视频后，本地服务会依次生成：
 
 - 从片源保存、逐帧切镜、逐镜证据到审片页生成的实时进度。
 - 当前阶段、已扫描时长或正在处理的镜头序号。
@@ -220,8 +220,11 @@ examples/demo/review_demo.html
 ```bash
 python3 src/ai_advisor_server.py \
   --provider mock \
-  --asset-root examples/demo
+  --asset-root examples/demo \
+  --allow-file-origin
 ```
+
+`--allow-file-origin` 只用于让 `file://` 直接打开的示例页调用模拟服务；处理真实项目时请通过本地片库打开审片页，不要加此参数。
 
 AI 默认关闭。先在“舒适度 → AI 影像导师”中选择“启用”，再点击镜头栏的“问 AI”或按 `A`。关闭时入口会隐藏，也不会检查服务或发起 AI 网络请求，普通拉片完全独立运行。真实模型、Ollama、视觉帧图和安全配置见 [AI 影像导师文档](docs/ai-film-advisor.md)。API Key 只放在本地服务环境变量中，不写入 HTML。
 
